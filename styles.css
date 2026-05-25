@@ -409,6 +409,28 @@ textarea:focus {
   gap: 10px;
 }
 
+.drive-status {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  background: var(--soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.drive-status.connected {
+  border-color: rgba(19, 121, 91, 0.35);
+  color: var(--ok);
+  background: #eefaf5;
+}
+
+.drive-status.error {
+  border-color: rgba(180, 35, 24, 0.35);
+  color: var(--danger);
+  background: #fff1f0;
+}
+
 .asset-summary-item {
   padding: 12px;
   border: 1px solid var(--line);

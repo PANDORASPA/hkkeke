@@ -105,6 +105,11 @@
             </label>
           </div>
 
+          <label>
+            Google OAuth Client ID
+            <input id="googleClientId" type="text" placeholder="xxxxxxxx.apps.googleusercontent.com" autocomplete="off">
+          </label>
+
           <label class="check-row">
             <input id="adultConfirm" type="checkbox">
             <span>我確認所有參考人物均為 18+，並只生成非露骨、非深偽冒充、成人時尚用途內容。</span>
@@ -145,6 +150,9 @@
           <div class="section-title">
             <span>Google Drive 資產庫</span>
             <div class="button-row">
+              <button id="googleConnect" type="button">連接 Drive</button>
+              <button id="driveSyncUpload" type="button" disabled>同步上 Drive</button>
+              <button id="driveSyncDownload" type="button" disabled>從 Drive 載入</button>
               <label class="import-button">
                 匯入 asset-pack
                 <input id="assetPackImport" type="file" accept="application/json,.json">
@@ -155,6 +163,7 @@
           </div>
 
           <div class="asset-summary" id="assetSummary"></div>
+          <div class="drive-status" id="driveStatus">Drive 未連接。第一版會同步到 My Drive / AI Image Factory / asset-packs / main / asset-pack.json。</div>
 
           <label>
             資產包名稱
@@ -332,5 +341,6 @@
     </div>
 
     <script src="app.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </body>
 </html>

@@ -34,7 +34,12 @@ http://127.0.0.1:4173/
 
 ## Google Drive 資產庫
 
-第一版不直接接 Google OAuth。建議用 Google Drive 保存資產包：
+App 支援兩種 Drive 用法：
+
+- **手動模式**：下載 `asset-pack.json` 後自己放入 Google Drive。
+- **OAuth 同步模式**：輸入 Google OAuth Client ID，登入後由 app 自動同步到 Drive。
+
+建議 Drive 位置：
 
 ```text
 AI Image Factory/
@@ -47,9 +52,39 @@ AI Image Factory/
 使用方式：
 
 1. 在 app 的「Google Drive 資產庫」建立人物、場景、衣服。
-2. 下載 `asset-pack.json`。
-3. 上傳到 Google Drive 的 `AI Image Factory/asset-packs/main/`。
-4. 下次使用時從 Drive 下載同一個 JSON，再匯入 app。
+2. 手動下載 `asset-pack.json`，或用 OAuth 同步到 Drive。
+3. 下次使用時手動匯入 JSON，或用「從 Drive 載入」。
+
+## Google OAuth 設定
+
+純靜態版不需要 Google client secret，只需要 OAuth Client ID。
+
+1. 打開 Google Cloud Console。
+2. 建立或選擇一個 project。
+3. 啟用 Google Drive API。
+4. OAuth consent screen 設定為 External 或 Internal，加入自己作為 test user。
+5. Credentials > Create credentials > OAuth client ID。
+6. Application type 選 Web application。
+7. Authorized JavaScript origins 加入本機網址，例如：
+
+```text
+http://127.0.0.1:4173
+http://localhost:4173
+```
+
+8. 把產生的 Client ID 填入 app 的「Google OAuth Client ID」。
+
+App 使用 scope：
+
+```text
+https://www.googleapis.com/auth/drive.file
+```
+
+此 scope 只讓 app 存取由 app 建立或用戶授權選用的檔案。同步檔案固定為：
+
+```text
+My Drive / AI Image Factory / asset-packs / main / asset-pack.json
+```
 
 範例檔案：
 

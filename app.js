@@ -52,6 +52,7 @@ const elements = {
   characterDescription: document.querySelector("#characterDescription"),
   consistencyNotes: document.querySelector("#consistencyNotes"),
   apiKey: document.querySelector("#apiKey"),
+  googleClientId: document.querySelector("#googleClientId"),
   modelSelect: document.querySelector("#modelSelect"),
   qualitySelect: document.querySelector("#qualitySelect"),
   sizeSelect: document.querySelector("#sizeSelect"),
@@ -82,6 +83,10 @@ const elements = {
   manifestImport: document.querySelector("#manifestImport"),
   historyList: document.querySelector("#historyList"),
   assetPackImport: document.querySelector("#assetPackImport"),
+  googleConnect: document.querySelector("#googleConnect"),
+  driveSyncUpload: document.querySelector("#driveSyncUpload"),
+  driveSyncDownload: document.querySelector("#driveSyncDownload"),
+  driveStatus: document.querySelector("#driveStatus"),
   downloadAssetPack: document.querySelector("#downloadAssetPack"),
   clearAssetLibrary: document.querySelector("#clearAssetLibrary"),
   assetPackName: document.querySelector("#assetPackName"),
@@ -140,6 +145,7 @@ const defaultSettings = {
   model: "gpt-image-1.5",
   quality: "medium",
   size: "1024x1024",
+  googleClientId: "",
   adultConfirm: false
 };
 
@@ -176,6 +182,13 @@ let isGenerating = false;
 let pendingCharacterImages = [];
 let pendingSceneImage = "";
 let pendingOutfitImage = "";
+let googleTokenClient = null;
+let googleAccessToken = "";
+let driveFolderIds = {
+  root: "",
+  assetPacks: "",
+  main: ""
+};
 
 function loadObject(key, fallback) {
   try {
@@ -201,6 +214,157 @@ function saveState() {
 
 function saveSettings() {
   localStorage.setItem("factorySettings", JSON.stringify(settings));
+}
+
+function driveReady() {
+  return Boolean(googleAccessToken);
+}
+
+function setDriveStatus(message, type = "") {
+  elements.driveStatus.textContent = message;
+  elements.driveStatus.className = `drive-status${type ? ` ${type}` : ""}`;
+  elements.driveSyncUpload.disabled = !driveReady();
+  elements.driveSyncDownload.disabled = !driveReady();
+}
+
+async function connectGoogleDrive() {
+  if (!settings.googleClientId.trim()) {
+    toast("請先輸入 Google OAuth Client ID。", true);
+    setDriveStatus("請先在 OpenAI 設定區輸入 Google OAuth Client ID。", "error");
+    return;
+  }
+  if (!window.google?.accounts?.oauth2) {
+    toast("Google Identity Services 未載入，請稍後再試。", true);
+    setDriveStatus("Google Identity Services 未載入。請確認網絡可讀 accounts.google.com。", "error");
+    return;
+  }
+  googleTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: settings.googleClientId.trim(),
+    scope: "https://www.googleapis.com/auth/drive.file",
+    callback: async (response) => {
+      if (response.error) {
+        setDriveStatus(`Drive 連接失敗：${response.error}`, "error");
+        return;
+      }
+      googleAccessToken = response.access_token;
+      setDriveStatus("Drive 已連接，正在準備資產庫資料夾...", "connected");
+      try {
+        await ensureDriveAssetFolders();
+        setDriveStatus("Drive 已連接：My Drive / AI Image Factory / asset-packs / main 已準備好。", "connected");
+        toast("Google Drive 已連接");
+      } catch (error) {
+        setDriveStatus(`Drive 資料夾準備失敗：${normalizeError(error)}`, "error");
+      }
+    }
+  });
+  googleTokenClient.requestAccessToken({ prompt: "consent" });
+}
+
+async function driveFetch(url, options = {}) {
+  if (!googleAccessToken) throw new Error("Google Drive 未連接。");
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${googleAccessToken}`,
+      ...(options.headers || {})
+    }
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || `Google Drive API error ${response.status}`);
+  }
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) return response.json();
+  return response.text();
+}
+
+function driveQuery(value) {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+async function findDriveChildFolder(parentId, name) {
+  const q = encodeURIComponent(`'${parentId}' in parents and name = '${driveQuery(name)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
+  const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&spaces=drive&pageSize=1`;
+  const result = await driveFetch(url);
+  return result.files?.[0] || null;
+}
+
+async function createDriveFolder(parentId, name) {
+  return driveFetch("https://www.googleapis.com/drive/v3/files?fields=id,name", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [parentId]
+    })
+  });
+}
+
+async function ensureDriveChildFolder(parentId, name) {
+  return (await findDriveChildFolder(parentId, name)) || createDriveFolder(parentId, name);
+}
+
+async function ensureDriveAssetFolders() {
+  const root = await ensureDriveChildFolder("root", "AI Image Factory");
+  const assetPacks = await ensureDriveChildFolder(root.id, "asset-packs");
+  const main = await ensureDriveChildFolder(assetPacks.id, "main");
+  driveFolderIds = { root: root.id, assetPacks: assetPacks.id, main: main.id };
+  return driveFolderIds;
+}
+
+async function findAssetPackFile() {
+  await ensureDriveAssetFolders();
+  const q = encodeURIComponent(`'${driveFolderIds.main}' in parents and name = 'asset-pack.json' and trashed = false`);
+  const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime,size)&spaces=drive&pageSize=1`;
+  const result = await driveFetch(url);
+  return result.files?.[0] || null;
+}
+
+async function uploadAssetPackToDrive() {
+  setDriveStatus("正在同步 asset-pack 到 Google Drive...", "connected");
+  const pack = buildAssetPack();
+  const existing = await findAssetPackFile();
+  const metadata = {
+    name: "asset-pack.json",
+    mimeType: "application/json",
+    parents: existing ? undefined : [driveFolderIds.main]
+  };
+  const boundary = `codex_${Date.now()}`;
+  const body = [
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(metadata),
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(pack, null, 2),
+    `--${boundary}--`
+  ].join("\r\n");
+  const method = existing ? "PATCH" : "POST";
+  const endpoint = existing
+    ? `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=multipart&fields=id,name,modifiedTime`
+    : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime";
+  const file = await driveFetch(endpoint, {
+    method,
+    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+    body
+  });
+  setDriveStatus(`已同步到 Google Drive：asset-pack.json（${new Date(file.modifiedTime).toLocaleString("zh-HK")}）`, "connected");
+  toast("asset-pack 已同步到 Drive");
+}
+
+async function downloadAssetPackFromDrive() {
+  setDriveStatus("正在從 Google Drive 載入 asset-pack...", "connected");
+  const file = await findAssetPackFile();
+  if (!file) {
+    setDriveStatus("Drive 未找到 asset-pack.json，請先同步上 Drive。", "error");
+    return;
+  }
+  const text = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
+  importAssetPack(JSON.parse(text));
+  setDriveStatus(`已從 Google Drive 載入 asset-pack.json（${new Date(file.modifiedTime).toLocaleString("zh-HK")}）`, "connected");
 }
 
 function saveAssetLibrary() {
@@ -1168,6 +1332,7 @@ function hydrate() {
   elements.characterDescription.value = state.characterDescription;
   elements.consistencyNotes.value = state.consistencyNotes;
   elements.apiKey.value = settings.apiKey;
+  elements.googleClientId.value = settings.googleClientId;
   elements.modelSelect.value = settings.model;
   elements.qualitySelect.value = settings.quality;
   elements.sizeSelect.value = settings.size;
@@ -1183,6 +1348,7 @@ function hydrate() {
   renderHistory();
   renderPreflight();
   updateReferenceFromCharacter();
+  setDriveStatus(googleAccessToken ? "Drive 已連接。" : "Drive 未連接。第一版會同步到 My Drive / AI Image Factory / asset-packs / main / asset-pack.json。", googleAccessToken ? "connected" : "");
 }
 
 function bindControls() {
@@ -1373,6 +1539,7 @@ function bindControls() {
 
   [
     ["apiKey", "apiKey"],
+    ["googleClientId", "googleClientId"],
     ["modelSelect", "model"],
     ["qualitySelect", "quality"],
     ["sizeSelect", "size"]
@@ -1531,6 +1698,24 @@ function bindControls() {
     saveState();
     hydrate();
     toast("資產庫已清空");
+  });
+
+  elements.googleConnect.addEventListener("click", connectGoogleDrive);
+  elements.driveSyncUpload.addEventListener("click", async () => {
+    try {
+      await uploadAssetPackToDrive();
+    } catch (error) {
+      setDriveStatus(`同步失敗：${normalizeError(error)}`, "error");
+      toast("同步到 Drive 失敗", true);
+    }
+  });
+  elements.driveSyncDownload.addEventListener("click", async () => {
+    try {
+      await downloadAssetPackFromDrive();
+    } catch (error) {
+      setDriveStatus(`載入失敗：${normalizeError(error)}`, "error");
+      toast("從 Drive 載入失敗", true);
+    }
   });
 
   elements.assetLibraryList.addEventListener("click", (event) => {
