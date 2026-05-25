@@ -41,6 +41,17 @@
             一致性要求
             <textarea id="consistencyNotes" rows="3" placeholder="same face, same identity, consistent body proportion, natural skin texture"></textarea>
           </label>
+
+          <div class="settings-grid">
+            <label>
+              人物庫角色
+              <select id="characterSelect"></select>
+            </label>
+            <label>
+              角度 / 表情
+              <select id="characterImageSelect"></select>
+            </label>
+          </div>
         </section>
 
         <section class="panel-section">
@@ -106,6 +117,13 @@
       <main class="workspace">
         <section class="control-strip">
           <label>
+            人物來源
+            <select id="sourceModeSelect">
+              <option value="asset">人物庫優先</option>
+              <option value="manual">手動參考圖</option>
+            </select>
+          </label>
+          <label>
             場景
             <select id="sceneSelect"></select>
           </label>
@@ -121,6 +139,108 @@
             拍攝風格
             <select id="styleSelect"></select>
           </label>
+        </section>
+
+        <section class="tool-area">
+          <div class="section-title">
+            <span>Google Drive 資產庫</span>
+            <div class="button-row">
+              <label class="import-button">
+                匯入 asset-pack
+                <input id="assetPackImport" type="file" accept="application/json,.json">
+              </label>
+              <button id="downloadAssetPack" type="button">下載 asset-pack</button>
+              <button id="clearAssetLibrary" type="button">清空庫存</button>
+            </div>
+          </div>
+
+          <div class="asset-summary" id="assetSummary"></div>
+
+          <label>
+            資產包名稱
+            <input id="assetPackName" type="text" placeholder="hair-salon-main-library">
+          </label>
+
+          <div class="tabs asset-tabs">
+            <button class="tab-button active" type="button" data-asset-tab="character">人物庫</button>
+            <button class="tab-button" type="button" data-asset-tab="scene">場景庫</button>
+            <button class="tab-button" type="button" data-asset-tab="outfit">衣服庫</button>
+          </div>
+
+          <div class="asset-panel active" id="characterAssetPanel">
+            <div class="asset-form-grid">
+              <label>角色 ID<input id="assetCharacterId" type="text" placeholder="girl-hk-001"></label>
+              <label>名稱<input id="assetCharacterName" type="text" placeholder="角色名稱"></label>
+              <label>版本<input id="assetCharacterVersion" type="text" placeholder="v1"></label>
+              <label>一致性等級
+                <select id="assetCharacterQuality">
+                  <option value="A">A - 正式可用</option>
+                  <option value="B">B - 可測試</option>
+                  <option value="C">C - 暫存</option>
+                </select>
+              </label>
+              <label>審稿狀態
+                <select id="assetCharacterStatus">
+                  <option value="approved">approved</option>
+                  <option value="draft">draft</option>
+                  <option value="retired">retired</option>
+                </select>
+              </label>
+              <label>Tags<input id="assetCharacterTags" type="text" placeholder="hk, long-hair, sweet"></label>
+            </div>
+            <label>角色描述<textarea id="assetCharacterDescription" rows="3" placeholder="角色外貌、髮型、比例、氣質"></textarea></label>
+            <label>一致性要求<textarea id="assetCharacterConsistency" rows="3" placeholder="same face, same hairstyle, consistent body proportion"></textarea></label>
+            <label>禁忌 prompt<textarea id="assetCharacterNegative" rows="2" placeholder="no short hair, no heavy makeup"></textarea></label>
+            <label>備註 / 來源<textarea id="assetCharacterNotes" rows="2" placeholder="來源、用途、審稿備註"></textarea></label>
+            <label class="check-row">
+              <input id="assetCharacterAdult" type="checkbox" checked>
+              <span>確認此角色為 18+ 成人時尚用途。</span>
+            </label>
+            <label>
+              多角度 / 表情圖片
+              <input id="assetCharacterImages" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+            </label>
+            <div class="asset-preview-grid" id="assetCharacterPreview"></div>
+            <button id="addCharacterAsset" type="button">加入人物庫</button>
+          </div>
+
+          <div class="asset-panel" id="sceneAssetPanel">
+            <div class="asset-form-grid">
+              <label>場景 ID<input id="assetSceneId" type="text" placeholder="central-pier"></label>
+              <label>場景名稱<input id="assetSceneName" type="text" placeholder="中環碼頭"></label>
+              <label>氣氛<input id="assetSceneMood" type="text" placeholder="daylight cinematic"></label>
+              <label>Tags<input id="assetSceneTags" type="text" placeholder="hong-kong, outdoor, daylight"></label>
+            </div>
+            <label>Prompt 描述<textarea id="assetScenePrompt" rows="3" placeholder="Central Pier, Hong Kong waterfront..."></textarea></label>
+            <label>拍攝限制 / 備註<textarea id="assetSceneNotes" rows="2" placeholder="避免太多人、避免招牌文字"></textarea></label>
+            <label>場景參考圖<input id="assetSceneImage" type="file" accept="image/png,image/jpeg,image/webp"></label>
+            <div class="asset-preview-grid" id="assetScenePreview"></div>
+            <button id="addSceneAsset" type="button">加入場景庫</button>
+          </div>
+
+          <div class="asset-panel" id="outfitAssetPanel">
+            <div class="asset-form-grid">
+              <label>衣服 ID<input id="assetOutfitId" type="text" placeholder="salon-uniform"></label>
+              <label>名稱<input id="assetOutfitName" type="text" placeholder="髮型屋制服"></label>
+              <label>分類<input id="assetOutfitCategory" type="text" placeholder="uniform"></label>
+              <label>安全線
+                <select id="assetOutfitSafety">
+                  <option value="non-explicit">non-explicit</option>
+                  <option value="conservative">conservative</option>
+                  <option value="swimwear-non-explicit">swimwear-non-explicit</option>
+                </select>
+              </label>
+              <label>Tags<input id="assetOutfitTags" type="text" placeholder="salon, black, uniform"></label>
+              <label>適合場景<input id="assetOutfitSceneFit" type="text" placeholder="hair-salon, ad-studio"></label>
+            </div>
+            <label>Prompt 描述<textarea id="assetOutfitPrompt" rows="3" placeholder="minimal hair salon uniform..."></textarea></label>
+            <label>備註<textarea id="assetOutfitNotes" rows="2" placeholder="品牌感、材質、禁忌"></textarea></label>
+            <label>服裝參考圖<input id="assetOutfitImage" type="file" accept="image/png,image/jpeg,image/webp"></label>
+            <div class="asset-preview-grid" id="assetOutfitPreview"></div>
+            <button id="addOutfitAsset" type="button">加入衣服庫</button>
+          </div>
+
+          <div class="asset-list-grid" id="assetLibraryList"></div>
         </section>
 
         <section class="action-bar">

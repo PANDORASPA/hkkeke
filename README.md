@@ -19,6 +19,8 @@ http://127.0.0.1:4173/
 ## 主要功能
 
 - 上傳人物參考圖
+- Google Drive asset-pack 匯入 / 匯出
+- 人物庫、場景庫、衣服庫本機建包工具
 - 建立角色卡
 - 選擇場景、衣服、情緒、拍攝風格
 - 1 / 6 / 9 張姿勢隊列
@@ -29,6 +31,33 @@ http://127.0.0.1:4173/
 - 素材包 JSON 下載與匯入
 - 文字包 Markdown 下載
 - 成人時尚安全線與工作台檢查
+
+## Google Drive 資產庫
+
+第一版不直接接 Google OAuth。建議用 Google Drive 保存資產包：
+
+```text
+AI Image Factory/
+  asset-packs/
+    main/
+      asset-pack.json
+      notes.md
+```
+
+使用方式：
+
+1. 在 app 的「Google Drive 資產庫」建立人物、場景、衣服。
+2. 下載 `asset-pack.json`。
+3. 上傳到 Google Drive 的 `AI Image Factory/asset-packs/main/`。
+4. 下次使用時從 Drive 下載同一個 JSON，再匯入 app。
+
+範例檔案：
+
+```text
+examples/asset-pack.example.json
+```
+
+`asset-pack.json` 會把圖片用 Data URL 內嵌，匯入後不用公開 Drive 連結，也不受跨域限制。
 
 ## 使用流程
 

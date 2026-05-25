@@ -57,6 +57,9 @@ const elements = {
   sizeSelect: document.querySelector("#sizeSelect"),
   countSelect: document.querySelector("#countSelect"),
   adultConfirm: document.querySelector("#adultConfirm"),
+  sourceModeSelect: document.querySelector("#sourceModeSelect"),
+  characterSelect: document.querySelector("#characterSelect"),
+  characterImageSelect: document.querySelector("#characterImageSelect"),
   sceneSelect: document.querySelector("#sceneSelect"),
   outfitSelect: document.querySelector("#outfitSelect"),
   moodSelect: document.querySelector("#moodSelect"),
@@ -77,7 +80,44 @@ const elements = {
   downloadTextPack: document.querySelector("#downloadTextPack"),
   clearResults: document.querySelector("#clearResults"),
   manifestImport: document.querySelector("#manifestImport"),
-  historyList: document.querySelector("#historyList")
+  historyList: document.querySelector("#historyList"),
+  assetPackImport: document.querySelector("#assetPackImport"),
+  downloadAssetPack: document.querySelector("#downloadAssetPack"),
+  clearAssetLibrary: document.querySelector("#clearAssetLibrary"),
+  assetPackName: document.querySelector("#assetPackName"),
+  assetSummary: document.querySelector("#assetSummary"),
+  assetLibraryList: document.querySelector("#assetLibraryList"),
+  assetCharacterId: document.querySelector("#assetCharacterId"),
+  assetCharacterName: document.querySelector("#assetCharacterName"),
+  assetCharacterVersion: document.querySelector("#assetCharacterVersion"),
+  assetCharacterQuality: document.querySelector("#assetCharacterQuality"),
+  assetCharacterStatus: document.querySelector("#assetCharacterStatus"),
+  assetCharacterTags: document.querySelector("#assetCharacterTags"),
+  assetCharacterDescription: document.querySelector("#assetCharacterDescription"),
+  assetCharacterConsistency: document.querySelector("#assetCharacterConsistency"),
+  assetCharacterNegative: document.querySelector("#assetCharacterNegative"),
+  assetCharacterNotes: document.querySelector("#assetCharacterNotes"),
+  assetCharacterAdult: document.querySelector("#assetCharacterAdult"),
+  assetCharacterImages: document.querySelector("#assetCharacterImages"),
+  assetCharacterPreview: document.querySelector("#assetCharacterPreview"),
+  assetSceneId: document.querySelector("#assetSceneId"),
+  assetSceneName: document.querySelector("#assetSceneName"),
+  assetSceneMood: document.querySelector("#assetSceneMood"),
+  assetSceneTags: document.querySelector("#assetSceneTags"),
+  assetScenePrompt: document.querySelector("#assetScenePrompt"),
+  assetSceneNotes: document.querySelector("#assetSceneNotes"),
+  assetSceneImage: document.querySelector("#assetSceneImage"),
+  assetScenePreview: document.querySelector("#assetScenePreview"),
+  assetOutfitId: document.querySelector("#assetOutfitId"),
+  assetOutfitName: document.querySelector("#assetOutfitName"),
+  assetOutfitCategory: document.querySelector("#assetOutfitCategory"),
+  assetOutfitSafety: document.querySelector("#assetOutfitSafety"),
+  assetOutfitTags: document.querySelector("#assetOutfitTags"),
+  assetOutfitSceneFit: document.querySelector("#assetOutfitSceneFit"),
+  assetOutfitPrompt: document.querySelector("#assetOutfitPrompt"),
+  assetOutfitNotes: document.querySelector("#assetOutfitNotes"),
+  assetOutfitImage: document.querySelector("#assetOutfitImage"),
+  assetOutfitPreview: document.querySelector("#assetOutfitPreview")
 };
 
 const defaultState = {
@@ -86,6 +126,9 @@ const defaultState = {
   consistencyNotes: "same face, same identity, consistent body proportion, consistent hairstyle, realistic skin texture",
   scene: "central-pier",
   outfit: "ol",
+  sourceMode: "asset",
+  characterAssetId: "manual",
+  characterImageType: "manual",
   mood: "sweet",
   style: "iphone",
   count: 6,
@@ -100,14 +143,39 @@ const defaultSettings = {
   adultConfirm: false
 };
 
+const defaultAssetLibrary = {
+  version: 1,
+  name: "hair-salon-main-library",
+  createdAt: "",
+  characters: [],
+  scenes: [],
+  outfits: []
+};
+
+const characterImageTypes = [
+  ["front", "正面"],
+  ["angle-45", "45 度"],
+  ["side", "側面"],
+  ["full-body", "全身"],
+  ["selfie", "自拍"],
+  ["smile", "笑容"],
+  ["cool", "冷感"],
+  ["natural", "自然表情"]
+];
+
 let state = loadObject("factoryState", defaultState);
 let settings = loadObject("factorySettings", defaultSettings);
+let assetLibrary = normalizeAssetLibrary(loadObject("assetLibrary", defaultAssetLibrary));
 let referenceFile = null;
 let referenceDataUrl = "";
+let assetReferenceDataUrl = "";
 let results = [];
 let currentManifest = null;
 let history = loadArray("factoryHistory");
 let isGenerating = false;
+let pendingCharacterImages = [];
+let pendingSceneImage = "";
+let pendingOutfitImage = "";
 
 function loadObject(key, fallback) {
   try {
@@ -135,8 +203,70 @@ function saveSettings() {
   localStorage.setItem("factorySettings", JSON.stringify(settings));
 }
 
+function saveAssetLibrary() {
+  assetLibrary = normalizeAssetLibrary(assetLibrary);
+  localStorage.setItem("assetLibrary", JSON.stringify(assetLibrary));
+}
+
+function normalizeAssetLibrary(library) {
+  return {
+    version: Number(library?.version || 1),
+    name: library?.name || defaultAssetLibrary.name,
+    createdAt: library?.createdAt || new Date().toISOString(),
+    characters: Array.isArray(library?.characters) ? library.characters : [],
+    scenes: Array.isArray(library?.scenes) ? library.scenes : [],
+    outfits: Array.isArray(library?.outfits) ? library.outfits : []
+  };
+}
+
+function parseTags(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function slugify(value, fallback = "asset") {
+  return safeFilename(value || fallback) || fallback;
+}
+
 function optionById(group, id) {
+  if (group === "scenes") return sceneOptionById(id);
+  if (group === "outfits") return outfitOptionById(id);
   return libraries[group].find((item) => item[0] === id) || libraries[group][0];
+}
+
+function sceneOptions() {
+  return [
+    ...libraries.scenes.map((item) => [...item, "builtin"]),
+    ...assetLibrary.scenes.map((item) => [`asset-scene:${item.id}`, item.name, item.prompt, "asset", item])
+  ];
+}
+
+function outfitOptions() {
+  return [
+    ...libraries.outfits.map((item) => [...item, "builtin"]),
+    ...assetLibrary.outfits.map((item) => [`asset-outfit:${item.id}`, item.name, item.prompt, "asset", item])
+  ];
+}
+
+function sceneOptionById(id) {
+  return sceneOptions().find((item) => item[0] === id) || sceneOptions()[0];
+}
+
+function outfitOptionById(id) {
+  return outfitOptions().find((item) => item[0] === id) || outfitOptions()[0];
+}
+
+function selectedCharacter() {
+  if (!state.characterAssetId || state.characterAssetId === "manual") return null;
+  return assetLibrary.characters.find((item) => item.id === state.characterAssetId) || null;
+}
+
+function selectedCharacterImage() {
+  const character = selectedCharacter();
+  if (!character) return null;
+  return character.images.find((item) => item.type === state.characterImageType) || character.images[0] || null;
 }
 
 function activePoseIds() {
@@ -152,6 +282,67 @@ function populateSelect(select, group, selectedId) {
     option.selected = id === selectedId;
     select.appendChild(option);
   });
+}
+
+function populateSceneSelect() {
+  populateOptionList(elements.sceneSelect, sceneOptions(), state.scene);
+}
+
+function populateOutfitSelect() {
+  populateOptionList(elements.outfitSelect, outfitOptions(), state.outfit);
+}
+
+function populateOptionList(select, options, selectedId) {
+  select.innerHTML = "";
+  options.forEach(([id, label, prompt, source]) => {
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = source === "asset" ? `庫存 · ${label}` : label;
+    option.selected = id === selectedId;
+    select.appendChild(option);
+  });
+}
+
+function renderCharacterSelectors() {
+  elements.characterSelect.innerHTML = "";
+  const manual = document.createElement("option");
+  manual.value = "manual";
+  manual.textContent = "手動參考圖";
+  manual.selected = !state.characterAssetId || state.characterAssetId === "manual";
+  elements.characterSelect.appendChild(manual);
+  assetLibrary.characters.forEach((character) => {
+    const option = document.createElement("option");
+    option.value = character.id;
+    option.textContent = `庫存 · ${character.name || character.id}`;
+    option.selected = character.id === state.characterAssetId;
+    elements.characterSelect.appendChild(option);
+  });
+  renderCharacterImageSelect();
+}
+
+function renderCharacterImageSelect() {
+  elements.characterImageSelect.innerHTML = "";
+  const character = selectedCharacter();
+  if (!character?.images?.length) {
+    const option = document.createElement("option");
+    option.value = "manual";
+    option.textContent = "使用手動上傳";
+    option.selected = true;
+    elements.characterImageSelect.appendChild(option);
+    elements.characterImageSelect.disabled = true;
+    return;
+  }
+  elements.characterImageSelect.disabled = false;
+  character.images.forEach((image) => {
+    const option = document.createElement("option");
+    option.value = image.type;
+    option.textContent = image.label || image.type;
+    option.selected = image.type === state.characterImageType;
+    elements.characterImageSelect.appendChild(option);
+  });
+  if (!character.images.some((image) => image.type === state.characterImageType)) {
+    state.characterImageType = character.images[0].type;
+  }
 }
 
 function renderPoseGrid() {
@@ -193,18 +384,34 @@ function buildBasePrompt() {
   const outfit = optionById("outfits", state.outfit);
   const mood = optionById("moods", state.mood);
   const style = optionById("styles", state.style);
+  const character = selectedCharacter();
+  const characterImage = selectedCharacterImage();
+  const characterDescription = character?.description || state.characterDescription;
+  const consistencyNotes = character?.consistencyNotes || state.consistencyNotes;
+  const negativePrompt = character?.negativePrompt ? `Character forbidden details: ${character.negativePrompt}` : "";
+  const sceneAsset = scene[4];
+  const outfitAsset = outfit[4];
   return [
-    `Character ID: ${state.characterId}`,
-    `Character: ${state.characterDescription}`,
-    `Face and identity consistency: ${state.consistencyNotes}`,
+    `Character ID: ${character?.id || state.characterId}`,
+    `Character: ${characterDescription}`,
+    characterImage ? `Reference angle/expression: ${characterImage.label || characterImage.type}` : "",
+    character?.tags?.length ? `Character tags: ${character.tags.join(", ")}` : "",
+    character?.qualityRating ? `Character consistency grade: ${character.qualityRating}` : "",
+    `Face and identity consistency: ${consistencyNotes}`,
+    negativePrompt,
     `Scene: ${scene[2]}`,
+    sceneAsset?.mood ? `Scene mood: ${sceneAsset.mood}` : "",
+    sceneAsset?.notes ? `Scene restrictions: ${sceneAsset.notes}` : "",
     `Outfit: ${outfit[2]}`,
+    outfitAsset?.category ? `Outfit category: ${outfitAsset.category}` : "",
+    outfitAsset?.safety ? `Outfit safety: ${outfitAsset.safety}` : "",
+    outfitAsset?.sceneFit?.length ? `Outfit best-fit scenes: ${outfitAsset.sceneFit.join(", ")}` : "",
     `Emotion: ${mood[2]}`,
     `Photography style: ${style[2]}`,
     "Audience: adult fashion, beauty, hair salon and social media content.",
     "Safety: adult 18+ subject only, tasteful fashion styling, non-explicit, no nudity, no sexual act, no minor-coded appearance.",
     "Quality rules: preserve the same face, age, hairstyle, body proportion, and identity from the reference image. Use realistic anatomy, natural hands, natural skin texture, coherent lighting, and social-media-ready composition. No text, watermark, logo, extra fingers, distorted face, duplicate limbs, or uncanny anatomy."
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function buildPromptForPose(poseId, index) {
@@ -238,7 +445,9 @@ function buildCaption() {
   const scene = optionById("scenes", state.scene)[1];
   const outfit = optionById("outfits", state.outfit)[1];
   const mood = optionById("moods", state.mood)[1];
-  return `今日造型：${outfit} x ${scene}\n狀態：${mood}\n\n#香港女生 #髮型靈感 #AI寫真 #ootd #hkcontent`;
+  const character = selectedCharacter();
+  const name = character?.name || state.characterId;
+  return `今日造型：${name} / ${outfit} x ${scene}\n狀態：${mood}\n\n#香港女生 #髮型靈感 #AI寫真 #ootd #hkcontent`;
 }
 
 function renderOutputs() {
@@ -300,7 +509,7 @@ function resetResults() {
 
 function validateBeforeGenerate() {
   if (!settings.apiKey.trim()) return "請先輸入 OpenAI API key。";
-  if (!referenceFile) return "請先上傳人物參考圖。";
+  if (!getActiveReferenceSource()) return "請先選人物庫圖片或上傳人物參考圖。";
   if (!settings.adultConfirm) return "請先確認成人時尚安全線。";
   if (isGenerating) return "正在生成，請稍候。";
   return "";
@@ -419,9 +628,11 @@ async function retryOne(index) {
 }
 
 async function openAiImageEdit(prompt) {
+  const referenceSource = getActiveReferenceSource();
+  if (!referenceSource) throw new Error("未有可用人物參考圖。");
   const formData = new FormData();
   formData.append("model", settings.model);
-  formData.append("image", referenceFile, referenceFile.name || "reference.png");
+  formData.append("image", referenceSource.file, referenceSource.name);
   formData.append("prompt", prompt);
   formData.append("n", "1");
   formData.append("size", settings.size);
@@ -445,6 +656,34 @@ async function openAiImageEdit(prompt) {
   const b64 = payload.data?.[0]?.b64_json;
   if (!b64) throw new Error("API 回應未包含 b64_json 圖片。");
   return `data:image/png;base64,${b64}`;
+}
+
+function getActiveReferenceSource() {
+  const characterImage = state.sourceMode !== "manual" ? selectedCharacterImage() : null;
+  if (characterImage?.dataUrl) {
+    try {
+      return {
+        file: dataUrlToFile(characterImage.dataUrl, `${state.characterAssetId}-${characterImage.type}.png`),
+        name: `${state.characterAssetId}-${characterImage.type}.png`
+      };
+    } catch {
+      return null;
+    }
+  }
+  if (referenceFile) {
+    return { file: referenceFile, name: referenceFile.name || "reference.png" };
+  }
+  return null;
+}
+
+function dataUrlToFile(dataUrl, filename) {
+  const [header, data] = dataUrl.split(",");
+  const mime = header.match(/data:(.*?);/)?.[1] || "image/png";
+  const isBase64 = header.includes(";base64");
+  const binary = isBase64 ? atob(data) : decodeURIComponent(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new File([bytes], filename, { type: mime });
 }
 
 function normalizeError(error) {
@@ -482,10 +721,13 @@ function buildManifest(contactSheet) {
     version: 1,
     createdAt: now.toISOString(),
     character: {
-      id: state.characterId,
-      description: state.characterDescription,
-      consistencyNotes: state.consistencyNotes,
-      referenceImage: referenceDataUrl
+      id: selectedCharacter()?.id || state.characterId,
+      name: selectedCharacter()?.name || "",
+      description: selectedCharacter()?.description || state.characterDescription,
+      consistencyNotes: selectedCharacter()?.consistencyNotes || state.consistencyNotes,
+      selectedImageType: selectedCharacterImage()?.type || "manual",
+      sourceMode: state.sourceMode,
+      referenceImage: selectedCharacterImage()?.dataUrl || referenceDataUrl
     },
     settings: {
       model: settings.model,
@@ -689,9 +931,150 @@ function renderHistory() {
   });
 }
 
+function renderAssetLibrary() {
+  elements.assetPackName.value = assetLibrary.name;
+  elements.assetSummary.innerHTML = [
+    ["人物", assetLibrary.characters.length],
+    ["場景", assetLibrary.scenes.length],
+    ["衣服", assetLibrary.outfits.length]
+  ].map(([label, count]) => `
+    <div class="asset-summary-item">
+      <strong>${count}</strong>
+      <span>${label}庫存</span>
+    </div>
+  `).join("");
+
+  const cards = [
+    ...assetLibrary.characters.map((item) => ({
+      type: "character",
+      id: item.id,
+      name: item.name || item.id,
+      meta: `${item.images?.length || 0} 張 · ${item.qualityRating || "未評級"} · ${item.reviewStatus || "draft"}`,
+      image: item.images?.[0]?.dataUrl || ""
+    })),
+    ...assetLibrary.scenes.map((item) => ({
+      type: "scene",
+      id: item.id,
+      name: item.name || item.id,
+      meta: item.mood || "場景",
+      image: item.dataUrl || ""
+    })),
+    ...assetLibrary.outfits.map((item) => ({
+      type: "outfit",
+      id: item.id,
+      name: item.name || item.id,
+      meta: `${item.category || "服裝"} · ${item.safety || "non-explicit"}`,
+      image: item.dataUrl || ""
+    }))
+  ];
+
+  elements.assetLibraryList.innerHTML = cards.length ? cards.map((item) => `
+    <article class="asset-library-card">
+      ${item.image ? `<img src="${item.image}" alt="${item.name}">` : `<img alt="${item.name}">`}
+      <div>
+        <strong>${item.name}</strong>
+        <span>${item.type} / ${item.id}<br>${item.meta}</span>
+      </div>
+      <button type="button" data-asset-type="${item.type}" data-asset-id="${item.id}">刪除</button>
+    </article>
+  `).join("") : "<p class=\"note\">未有資產。先加入人物、場景或衣服，再下載 asset-pack 放入 Google Drive。</p>";
+
+  renderCharacterSelectors();
+  populateSceneSelect();
+  populateOutfitSelect();
+}
+
+function buildAssetPack() {
+  return {
+    version: 1,
+    name: assetLibrary.name || defaultAssetLibrary.name,
+    createdAt: assetLibrary.createdAt || new Date().toISOString(),
+    lastUpdated: new Date().toISOString(),
+    characters: assetLibrary.characters,
+    scenes: assetLibrary.scenes,
+    outfits: assetLibrary.outfits
+  };
+}
+
+function importAssetPack(pack) {
+  if (!pack || (!Array.isArray(pack.characters) && !Array.isArray(pack.scenes) && !Array.isArray(pack.outfits))) {
+    toast("asset-pack 格式不正確。", true);
+    return;
+  }
+  assetLibrary = normalizeAssetLibrary(pack);
+  saveAssetLibrary();
+  hydrate();
+  setStatus("已匯入資產庫", `${assetLibrary.characters.length} 人物、${assetLibrary.scenes.length} 場景、${assetLibrary.outfits.length} 衣服。`);
+  toast("asset-pack 已匯入");
+}
+
+function upsertById(items, item) {
+  const index = items.findIndex((existing) => existing.id === item.id);
+  if (index >= 0) items[index] = item;
+  else items.push(item);
+}
+
+function renderPendingImages(container, images) {
+  container.innerHTML = images.map((image) => `
+    <div class="asset-thumb">
+      <img src="${image.dataUrl}" alt="${image.label}">
+      <span>${image.label}</span>
+    </div>
+  `).join("");
+}
+
+function clearAssetInputs(kind) {
+  if (kind === "character") {
+    [
+      elements.assetCharacterId,
+      elements.assetCharacterName,
+      elements.assetCharacterVersion,
+      elements.assetCharacterTags,
+      elements.assetCharacterDescription,
+      elements.assetCharacterConsistency,
+      elements.assetCharacterNegative,
+      elements.assetCharacterNotes
+    ].forEach((input) => { input.value = ""; });
+    elements.assetCharacterQuality.value = "A";
+    elements.assetCharacterStatus.value = "approved";
+    elements.assetCharacterAdult.checked = true;
+    elements.assetCharacterImages.value = "";
+    pendingCharacterImages = [];
+    renderPendingImages(elements.assetCharacterPreview, pendingCharacterImages);
+  }
+  if (kind === "scene") {
+    [
+      elements.assetSceneId,
+      elements.assetSceneName,
+      elements.assetSceneMood,
+      elements.assetSceneTags,
+      elements.assetScenePrompt,
+      elements.assetSceneNotes
+    ].forEach((input) => { input.value = ""; });
+    elements.assetSceneImage.value = "";
+    pendingSceneImage = "";
+    renderPendingImages(elements.assetScenePreview, []);
+  }
+  if (kind === "outfit") {
+    [
+      elements.assetOutfitId,
+      elements.assetOutfitName,
+      elements.assetOutfitCategory,
+      elements.assetOutfitTags,
+      elements.assetOutfitSceneFit,
+      elements.assetOutfitPrompt,
+      elements.assetOutfitNotes
+    ].forEach((input) => { input.value = ""; });
+    elements.assetOutfitSafety.value = "non-explicit";
+    elements.assetOutfitImage.value = "";
+    pendingOutfitImage = "";
+    renderPendingImages(elements.assetOutfitPreview, []);
+  }
+}
+
 function renderPreflight() {
   const items = [
-    ["參考圖", Boolean(referenceFile || referenceDataUrl)],
+    ["參考圖", Boolean(getActiveReferenceSource() || referenceDataUrl)],
     ["API key", Boolean(settings.apiKey.trim())],
     ["安全線", Boolean(settings.adultConfirm)],
     [`${state.count} 張`, activePoseIds().length === Number(state.count)],
@@ -705,6 +1088,25 @@ function renderPreflight() {
       </div>
     `)
     .join("");
+}
+
+function updateReferenceFromCharacter() {
+  const character = selectedCharacter();
+  const image = selectedCharacterImage();
+  assetReferenceDataUrl = image?.dataUrl || "";
+  if (character && image?.dataUrl && state.sourceMode !== "manual") {
+    referenceDataUrl = image.dataUrl;
+    elements.referencePreview.src = image.dataUrl;
+    elements.uploadBox.classList.add("has-image");
+  } else if (!referenceFile && !referenceDataUrl) {
+    referenceDataUrl = "";
+    elements.referencePreview.removeAttribute("src");
+    elements.uploadBox.classList.remove("has-image");
+  } else if (referenceDataUrl) {
+    elements.referencePreview.src = referenceDataUrl;
+    elements.uploadBox.classList.add("has-image");
+  }
+  renderPreflight();
 }
 
 function downloadDataUrl(dataUrl, filename) {
@@ -770,9 +1172,9 @@ function hydrate() {
   elements.qualitySelect.value = settings.quality;
   elements.sizeSelect.value = settings.size;
   elements.countSelect.value = String(state.count);
+  elements.sourceModeSelect.value = state.sourceMode || "asset";
   elements.adultConfirm.checked = Boolean(settings.adultConfirm);
-  populateSelect(elements.sceneSelect, "scenes", state.scene);
-  populateSelect(elements.outfitSelect, "outfits", state.outfit);
+  renderAssetLibrary();
   populateSelect(elements.moodSelect, "moods", state.mood);
   populateSelect(elements.styleSelect, "styles", state.style);
   renderPoseGrid();
@@ -780,6 +1182,7 @@ function hydrate() {
   renderResults();
   renderHistory();
   renderPreflight();
+  updateReferenceFromCharacter();
 }
 
 function bindControls() {
@@ -794,8 +1197,45 @@ function bindControls() {
     referenceDataUrl = await fileToDataUrl(file);
     elements.referencePreview.src = referenceDataUrl;
     elements.uploadBox.classList.add("has-image");
+    state.sourceMode = "manual";
+    state.characterAssetId = "manual";
+    saveState();
+    renderCharacterSelectors();
     resetResults();
     renderPreflight();
+  });
+
+  elements.sourceModeSelect.addEventListener("change", () => {
+    state.sourceMode = elements.sourceModeSelect.value;
+    saveState();
+    updateReferenceFromCharacter();
+    renderOutputs();
+    resetResults();
+  });
+
+  elements.characterSelect.addEventListener("change", () => {
+    state.characterAssetId = elements.characterSelect.value;
+    state.sourceMode = state.characterAssetId === "manual" ? "manual" : "asset";
+    const character = selectedCharacter();
+    state.characterImageType = character?.images?.[0]?.type || "manual";
+    if (character) {
+      state.characterId = character.id;
+      state.characterDescription = character.description || state.characterDescription;
+      state.consistencyNotes = character.consistencyNotes || state.consistencyNotes;
+    }
+    saveState();
+    hydrate();
+    updateReferenceFromCharacter();
+    resetResults();
+  });
+
+  elements.characterImageSelect.addEventListener("change", () => {
+    state.characterImageType = elements.characterImageSelect.value;
+    state.sourceMode = state.characterAssetId === "manual" ? "manual" : "asset";
+    saveState();
+    updateReferenceFromCharacter();
+    renderOutputs();
+    resetResults();
   });
 
   [
@@ -823,6 +1263,112 @@ function bindControls() {
       renderOutputs();
       resetResults();
     });
+  });
+
+  elements.assetPackName.addEventListener("input", () => {
+    assetLibrary.name = elements.assetPackName.value;
+    saveAssetLibrary();
+  });
+
+  elements.assetCharacterImages.addEventListener("change", async () => {
+    const files = Array.from(elements.assetCharacterImages.files || []);
+    pendingCharacterImages = await Promise.all(files.map(async (file, index) => {
+      const [type, fallbackLabel] = characterImageTypes[index] || [`custom-${index + 1}`, `自訂 ${index + 1}`];
+      return {
+        type,
+        label: fallbackLabel,
+        dataUrl: await fileToDataUrl(file)
+      };
+    }));
+    renderPendingImages(elements.assetCharacterPreview, pendingCharacterImages);
+  });
+
+  elements.assetSceneImage.addEventListener("change", async () => {
+    const file = elements.assetSceneImage.files[0];
+    pendingSceneImage = file ? await fileToDataUrl(file) : "";
+    renderPendingImages(elements.assetScenePreview, pendingSceneImage ? [{ label: "場景圖", dataUrl: pendingSceneImage }] : []);
+  });
+
+  elements.assetOutfitImage.addEventListener("change", async () => {
+    const file = elements.assetOutfitImage.files[0];
+    pendingOutfitImage = file ? await fileToDataUrl(file) : "";
+    renderPendingImages(elements.assetOutfitPreview, pendingOutfitImage ? [{ label: "服裝圖", dataUrl: pendingOutfitImage }] : []);
+  });
+
+  document.querySelector("#addCharacterAsset").addEventListener("click", () => {
+    const id = slugify(elements.assetCharacterId.value || elements.assetCharacterName.value, "character");
+    if (!id || !pendingCharacterImages.length) {
+      toast("人物需要 ID/名稱同最少一張圖片。", true);
+      return;
+    }
+    upsertById(assetLibrary.characters, {
+      id,
+      name: elements.assetCharacterName.value || id,
+      version: elements.assetCharacterVersion.value || "v1",
+      description: elements.assetCharacterDescription.value,
+      consistencyNotes: elements.assetCharacterConsistency.value,
+      negativePrompt: elements.assetCharacterNegative.value,
+      tags: parseTags(elements.assetCharacterTags.value),
+      qualityRating: elements.assetCharacterQuality.value,
+      reviewStatus: elements.assetCharacterStatus.value,
+      ageConfirmed18Plus: elements.assetCharacterAdult.checked,
+      notes: elements.assetCharacterNotes.value,
+      source: "local-builder",
+      lastUpdated: new Date().toISOString(),
+      images: pendingCharacterImages
+    });
+    saveAssetLibrary();
+    clearAssetInputs("character");
+    renderAssetLibrary();
+    toast("人物已加入資產庫");
+  });
+
+  document.querySelector("#addSceneAsset").addEventListener("click", () => {
+    const id = slugify(elements.assetSceneId.value || elements.assetSceneName.value, "scene");
+    if (!id || !elements.assetScenePrompt.value) {
+      toast("場景需要 ID/名稱同 prompt 描述。", true);
+      return;
+    }
+    upsertById(assetLibrary.scenes, {
+      id,
+      name: elements.assetSceneName.value || id,
+      prompt: elements.assetScenePrompt.value,
+      mood: elements.assetSceneMood.value,
+      tags: parseTags(elements.assetSceneTags.value),
+      notes: elements.assetSceneNotes.value,
+      source: "local-builder",
+      lastUpdated: new Date().toISOString(),
+      dataUrl: pendingSceneImage
+    });
+    saveAssetLibrary();
+    clearAssetInputs("scene");
+    renderAssetLibrary();
+    toast("場景已加入資產庫");
+  });
+
+  document.querySelector("#addOutfitAsset").addEventListener("click", () => {
+    const id = slugify(elements.assetOutfitId.value || elements.assetOutfitName.value, "outfit");
+    if (!id || !elements.assetOutfitPrompt.value) {
+      toast("衣服需要 ID/名稱同 prompt 描述。", true);
+      return;
+    }
+    upsertById(assetLibrary.outfits, {
+      id,
+      name: elements.assetOutfitName.value || id,
+      category: elements.assetOutfitCategory.value,
+      prompt: elements.assetOutfitPrompt.value,
+      safety: elements.assetOutfitSafety.value,
+      tags: parseTags(elements.assetOutfitTags.value),
+      sceneFit: parseTags(elements.assetOutfitSceneFit.value),
+      notes: elements.assetOutfitNotes.value,
+      source: "local-builder",
+      lastUpdated: new Date().toISOString(),
+      dataUrl: pendingOutfitImage
+    });
+    saveAssetLibrary();
+    clearAssetInputs("outfit");
+    renderAssetLibrary();
+    toast("衣服已加入資產庫");
   });
 
   [
@@ -958,9 +1504,60 @@ function bindControls() {
     }
   });
 
-  document.querySelectorAll(".tab-button").forEach((button) => {
+  elements.assetPackImport.addEventListener("change", async () => {
+    const file = elements.assetPackImport.files[0];
+    if (!file) return;
+    try {
+      importAssetPack(JSON.parse(await file.text()));
+    } catch {
+      toast("無法讀取 asset-pack JSON。", true);
+    } finally {
+      elements.assetPackImport.value = "";
+    }
+  });
+
+  elements.downloadAssetPack.addEventListener("click", () => {
+    const pack = buildAssetPack();
+    downloadText(JSON.stringify(pack, null, 2), `${safeFilename(pack.name)}-${timestamp()}-asset-pack.json`);
+  });
+
+  elements.clearAssetLibrary.addEventListener("click", () => {
+    assetLibrary = { ...defaultAssetLibrary, createdAt: new Date().toISOString() };
+    saveAssetLibrary();
+    state.characterAssetId = "manual";
+    state.characterImageType = "manual";
+    state.scene = defaultState.scene;
+    state.outfit = defaultState.outfit;
+    saveState();
+    hydrate();
+    toast("資產庫已清空");
+  });
+
+  elements.assetLibraryList.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    const type = button.dataset.assetType;
+    const id = button.dataset.assetId;
+    if (type === "character") assetLibrary.characters = assetLibrary.characters.filter((item) => item.id !== id);
+    if (type === "scene") assetLibrary.scenes = assetLibrary.scenes.filter((item) => item.id !== id);
+    if (type === "outfit") assetLibrary.outfits = assetLibrary.outfits.filter((item) => item.id !== id);
+    saveAssetLibrary();
+    hydrate();
+    toast("資產已刪除");
+  });
+
+  document.querySelectorAll("[data-asset-tab]").forEach((button) => {
     button.addEventListener("click", () => {
-      document.querySelectorAll(".tab-button").forEach((item) => item.classList.remove("active"));
+      document.querySelectorAll("[data-asset-tab]").forEach((item) => item.classList.remove("active"));
+      document.querySelectorAll(".asset-panel").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      document.querySelector(`#${button.dataset.assetTab}AssetPanel`).classList.add("active");
+    });
+  });
+
+  document.querySelectorAll("[data-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll("[data-tab]").forEach((item) => item.classList.remove("active"));
       document.querySelectorAll(".tab-panel").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       document.querySelector(`#${button.dataset.tab}Panel`).classList.add("active");
