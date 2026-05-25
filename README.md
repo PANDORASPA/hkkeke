@@ -74,6 +74,12 @@ http://localhost:4173
 
 8. 把產生的 Client ID 填入 app 的「Google OAuth Client ID」。
 
+目前已預設填入：
+
+```text
+931340551675-gu68j2tnqch9ca5trpjfait1heihfgcq.apps.googleusercontent.com
+```
+
 App 使用 scope：
 
 ```text

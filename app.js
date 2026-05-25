@@ -145,7 +145,7 @@ const defaultSettings = {
   model: "gpt-image-1.5",
   quality: "medium",
   size: "1024x1024",
-  googleClientId: "",
+  googleClientId: "931340551675-gu68j2tnqch9ca5trpjfait1heihfgcq.apps.googleusercontent.com",
   adultConfirm: false
 };
 
@@ -171,6 +171,7 @@ const characterImageTypes = [
 
 let state = loadObject("factoryState", defaultState);
 let settings = loadObject("factorySettings", defaultSettings);
+if (!settings.googleClientId) settings.googleClientId = defaultSettings.googleClientId;
 let assetLibrary = normalizeAssetLibrary(loadObject("assetLibrary", defaultAssetLibrary));
 let referenceFile = null;
 let referenceDataUrl = "";
