@@ -3,6 +3,10 @@ Thumbs.db
 *.log
 node_modules/
 dist/
+.next/
+out/
+tsconfig.tsbuildinfo
+.vercel/
 .env
 .env.*
 !.env.example
