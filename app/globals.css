@@ -231,6 +231,57 @@ label {
   gap: 14px;
 }
 
+.checklist {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.status-list {
+  display: grid;
+  gap: 8px;
+}
+
+.status-list div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  font-size: 13px;
+}
+
+.status-list code {
+  overflow-wrap: anywhere;
+}
+
+.ok-text {
+  color: var(--ok);
+  font-weight: 800;
+}
+
+.error-text {
+  color: var(--danger);
+  font-weight: 800;
+}
+
+pre {
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 @media (max-width: 1100px) {
   .generate-layout,
   .settings-grid,
