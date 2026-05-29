@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -7,10 +7,12 @@ import {
   GIRL_STYLES,
   HAIR_COLORS,
   HAIR_STYLES,
+  OPTION_LABELS,
   OUTFITS,
   POSES
 } from "@/lib/options";
-import { DriveAsset, GeneratedImage } from "@/lib/types";
+import { buildPrompt } from "@/lib/prompt";
+import { DriveAsset, GeneratedImage, GeneratePayload } from "@/lib/types";
 
 type AssetsByCategory = {
   scene: DriveAsset[];
@@ -28,10 +30,18 @@ const emptyAssets: AssetsByCategory = {
   pose: []
 };
 
+const categoryLabels: Record<keyof AssetsByCategory, string> = {
+  scene: "場景",
+  girl: "女仔參考",
+  outfit: "衣服",
+  hair: "髮型髮色",
+  pose: "姿勢"
+};
+
 export default function GeneratePage() {
   const [assets, setAssets] = useState<AssetsByCategory>(emptyAssets);
   const [loadingAssets, setLoadingAssets] = useState(true);
-  const [status, setStatus] = useState("Loading Google Drive assets...");
+  const [status, setStatus] = useState("正在讀取 Google Drive 素材...");
   const [selectedScene, setSelectedScene] = useState("");
   const [selectedGirl, setSelectedGirl] = useState("");
   const [selectedOutfitAsset, setSelectedOutfitAsset] = useState("");
@@ -57,12 +67,12 @@ export default function GeneratePage() {
 
   async function fetchAssets() {
     setLoadingAssets(true);
-    setStatus("Syncing Google Drive assets...");
+    setStatus("正在同步 Google Drive 素材...");
     try {
       const response = await fetch("/api/drive/assets");
       const json = await response.json();
-      if (!response.ok) throw new Error(json.error || "Failed to load assets.");
-      const grouped = { ...emptyAssets } as AssetsByCategory;
+      if (!response.ok) throw new Error(json.error || "讀取素材失敗。");
+      const grouped = { scene: [], girl: [], outfit: [], hair: [], pose: [] } as AssetsByCategory;
       for (const asset of json.assets as DriveAsset[]) {
         const category = asset.category as keyof AssetsByCategory;
         if (grouped[category]) grouped[category].push(asset);
@@ -73,13 +83,32 @@ export default function GeneratePage() {
       setSelectedOutfitAsset(grouped.outfit[0]?.id || "");
       setSelectedHairAsset(grouped.hair[0]?.id || "");
       setSelectedPoseAsset(grouped.pose[0]?.id || "");
-      setStatus(`Loaded ${json.assets.length} Google Drive assets.`);
+      setStatus(`已同步 ${json.assets.length} 張素材。`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to load assets.");
+      setStatus(error instanceof Error ? error.message : "讀取素材失敗。");
     } finally {
       setLoadingAssets(false);
     }
   }
+
+  const payload: GeneratePayload = useMemo(() => ({
+    sceneAssetId: selectedScene,
+    girlReferenceAssetId: selectedGirl || undefined,
+    outfitAssetId: selectedOutfitAsset || undefined,
+    hairAssetId: selectedHairAsset || undefined,
+    poseAssetId: selectedPoseAsset || undefined,
+    girlStyle: form.girlStyle,
+    hairStyle: form.hairStyle,
+    hairColor: form.hairColor,
+    outfit: form.outfit,
+    bodyType: form.bodyType,
+    expression: form.expression,
+    pose: form.pose,
+    extraPrompt: form.extraPrompt,
+    count: Number(form.count) as 1 | 2 | 4
+  }), [form, selectedGirl, selectedHairAsset, selectedOutfitAsset, selectedPoseAsset, selectedScene]);
+
+  const promptPreview = useMemo(() => buildPrompt(payload), [payload]);
 
   const selectedAssets = useMemo(
     () => [
@@ -94,39 +123,25 @@ export default function GeneratePage() {
 
   async function generate() {
     if (!selectedScene) {
-      setStatus("Please select a scene first.");
+      setStatus("請先選擇一張場景圖。把圖片放入 Google Drive 的 01_Scenes_場景 後，按「同步素材」。");
       return;
     }
 
     setGenerating(true);
-    setStatus("Generating image...");
+    setResults([]);
+    setStatus("正在生成圖片，請等候...");
     try {
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sceneAssetId: selectedScene,
-          girlReferenceAssetId: selectedGirl || undefined,
-          outfitAssetId: selectedOutfitAsset || undefined,
-          hairAssetId: selectedHairAsset || undefined,
-          poseAssetId: selectedPoseAsset || undefined,
-          girlStyle: form.girlStyle,
-          hairStyle: form.hairStyle,
-          hairColor: form.hairColor,
-          outfit: form.outfit,
-          bodyType: form.bodyType,
-          expression: form.expression,
-          pose: form.pose,
-          extraPrompt: form.extraPrompt,
-          count: Number(form.count)
-        })
+        body: JSON.stringify(payload)
       });
       const json = await response.json();
-      if (!response.ok) throw new Error(json.error || "Generation failed.");
+      if (!response.ok) throw new Error(json.error || "生成失敗。");
       setResults(json.images);
-      setStatus(`Generated ${json.images.length} image(s).`);
+      setStatus(`完成生成 ${json.images.length} 張圖片，已自動上傳到 Google Drive 並寫入 Supabase。`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Generation failed.");
+      setStatus(error instanceof Error ? error.message : "生成失敗。");
     } finally {
       setGenerating(false);
     }
@@ -134,78 +149,68 @@ export default function GeneratePage() {
 
   return (
     <main className="page">
-      <h1>Generate</h1>
+      <div className="page-heading">
+        <div>
+          <h1>生成圖片</h1>
+          <p className="muted">正確流程：先把素材圖片放入 Google Drive 分類資料夾，再同步素材，選場景和設定，最後生成。</p>
+        </div>
+        <a className="secondary-link" href="/settings">檢查 API 設定</a>
+      </div>
+
       <div className="generate-layout">
         <section className="panel">
-          <h2>Scene Library</h2>
+          <h2>場景素材庫</h2>
           <button onClick={fetchAssets} disabled={loadingAssets}>
-            Refresh Drive Assets
+            {loadingAssets ? "同步中..." : "同步 Google Drive 素材"}
           </button>
           <p className="muted">{status}</p>
-          <AssetGrid assets={assets.scene} selectedId={selectedScene} onSelect={setSelectedScene} />
+          <AssetGrid assets={assets.scene} selectedId={selectedScene} onSelect={setSelectedScene} category="scene" />
         </section>
 
         <section className="panel">
-          <h2>Options</h2>
+          <h2>生成設定</h2>
           <div className="controls-grid">
-            <Select label="Girl Style" value={form.girlStyle} options={GIRL_STYLES} onChange={(girlStyle) => setForm({ ...form, girlStyle })} />
-            <Select label="Hair Style" value={form.hairStyle} options={HAIR_STYLES} onChange={(hairStyle) => setForm({ ...form, hairStyle })} />
-            <Select label="Hair Color" value={form.hairColor} options={HAIR_COLORS} onChange={(hairColor) => setForm({ ...form, hairColor })} />
-            <Select label="Outfit" value={form.outfit} options={OUTFITS} onChange={(outfit) => setForm({ ...form, outfit })} />
-            <Select label="Body Type" value={form.bodyType} options={BODY_TYPES} onChange={(bodyType) => setForm({ ...form, bodyType })} />
-            <Select label="Expression" value={form.expression} options={EXPRESSIONS} onChange={(expression) => setForm({ ...form, expression })} />
-            <Select label="Pose" value={form.pose} options={POSES} onChange={(pose) => setForm({ ...form, pose })} />
-            <Select label="Generate Count" value={form.count} options={["1", "2", "4"]} onChange={(count) => setForm({ ...form, count })} />
+            <Select label="女仔風格" value={form.girlStyle} options={GIRL_STYLES} onChange={(girlStyle) => setForm({ ...form, girlStyle })} />
+            <Select label="髮型" value={form.hairStyle} options={HAIR_STYLES} onChange={(hairStyle) => setForm({ ...form, hairStyle })} />
+            <Select label="髮色" value={form.hairColor} options={HAIR_COLORS} onChange={(hairColor) => setForm({ ...form, hairColor })} />
+            <Select label="衣服" value={form.outfit} options={OUTFITS} onChange={(outfit) => setForm({ ...form, outfit })} />
+            <Select label="身材比例" value={form.bodyType} options={BODY_TYPES} onChange={(bodyType) => setForm({ ...form, bodyType })} />
+            <Select label="表情" value={form.expression} options={EXPRESSIONS} onChange={(expression) => setForm({ ...form, expression })} />
+            <Select label="動作姿勢" value={form.pose} options={POSES} onChange={(pose) => setForm({ ...form, pose })} />
+            <Select label="生成數量" value={form.count} options={["1", "2", "4"]} onChange={(count) => setForm({ ...form, count })} />
           </div>
           <label>
-            Extra Prompt
-            <textarea value={form.extraPrompt} onChange={(event) => setForm({ ...form, extraPrompt: event.target.value })} />
+            額外 prompt
+            <textarea value={form.extraPrompt} placeholder="例如：黃昏光線、手機街拍、自然構圖" onChange={(event) => setForm({ ...form, extraPrompt: event.target.value })} />
           </label>
-          <label>
-            Girl Reference
-            <select value={selectedGirl} onChange={(event) => setSelectedGirl(event.target.value)}>
-              <option value="">None</option>
-              {assets.girl.map((asset) => <option key={asset.id} value={asset.id}>{asset.sub_category || asset.file_name}</option>)}
-            </select>
-          </label>
-          <label>
-            Outfit Reference
-            <select value={selectedOutfitAsset} onChange={(event) => setSelectedOutfitAsset(event.target.value)}>
-              <option value="">None</option>
-              {assets.outfit.map((asset) => <option key={asset.id} value={asset.id}>{asset.sub_category || asset.file_name}</option>)}
-            </select>
-          </label>
-          <label>
-            Hair Reference
-            <select value={selectedHairAsset} onChange={(event) => setSelectedHairAsset(event.target.value)}>
-              <option value="">None</option>
-              {assets.hair.map((asset) => <option key={asset.id} value={asset.id}>{asset.sub_category || asset.file_name}</option>)}
-            </select>
-          </label>
-          <label>
-            Pose Reference
-            <select value={selectedPoseAsset} onChange={(event) => setSelectedPoseAsset(event.target.value)}>
-              <option value="">None</option>
-              {assets.pose.map((asset) => <option key={asset.id} value={asset.id}>{asset.sub_category || asset.file_name}</option>)}
-            </select>
-          </label>
+          <ReferenceSelect label="女仔參考圖（可選）" value={selectedGirl} assets={assets.girl} onChange={setSelectedGirl} />
+          <ReferenceSelect label="衣服參考圖（可選）" value={selectedOutfitAsset} assets={assets.outfit} onChange={setSelectedOutfitAsset} />
+          <ReferenceSelect label="髮型參考圖（可選）" value={selectedHairAsset} assets={assets.hair} onChange={setSelectedHairAsset} />
+          <ReferenceSelect label="姿勢參考圖（可選）" value={selectedPoseAsset} assets={assets.pose} onChange={setSelectedPoseAsset} />
         </section>
 
         <section className="panel">
-          <h2>Selected Assets</h2>
+          <h2>已選素材</h2>
           <AssetGrid assets={selectedAssets} selectedId="" onSelect={() => undefined} />
           <button className="primary" onClick={generate} disabled={generating || !selectedScene}>
-            {generating ? "Generating..." : "Generate"}
+            {generating ? "生成中..." : `生成 ${form.count} 張圖片`}
           </button>
-          <h2>Generated Result</h2>
+          <div className="prompt-preview">
+            <strong>Prompt 預覽</strong>
+            <pre>{promptPreview}</pre>
+          </div>
+          <h2>生成結果</h2>
           <div className="result-grid">
             {results.map((image) => (
               <article className="image-card" key={image.id}>
-                {image.thumbnail_url ? <img src={image.thumbnail_url} alt="Generated image" /> : null}
+                {image.thumbnail_url ? <img src={image.thumbnail_url} alt="生成圖片" /> : null}
                 <div>
-                  <strong>{image.girl_style}</strong>
+                  <strong>{label(image.girl_style)} / {label(image.outfit)}</strong>
                   <span>{image.prompt}</span>
-                  {image.google_drive_url ? <a href={image.google_drive_url} target="_blank">Google Drive</a> : null}
+                  <div className="card-actions">
+                    {image.google_drive_url ? <a href={image.google_drive_url} target="_blank">Google Drive</a> : null}
+                    <a href={`/api/generated/${image.id}/download`}>下載</a>
+                  </div>
                 </div>
               </article>
             ))}
@@ -216,19 +221,46 @@ export default function GeneratePage() {
   );
 }
 
+function label(value?: string | null) {
+  return value ? OPTION_LABELS[value] || value : "未設定";
+}
+
 function Select(props: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
   return (
     <label>
       {props.label}
       <select value={props.value} onChange={(event) => props.onChange(event.target.value)}>
-        {props.options.map((option) => <option key={option} value={option}>{option}</option>)}
+        {props.options.map((option) => <option key={option} value={option}>{label(option)}</option>)}
       </select>
     </label>
   );
 }
 
-function AssetGrid(props: { assets: DriveAsset[]; selectedId: string; onSelect: (id: string) => void }) {
-  if (!props.assets.length) return <p className="muted">No assets found.</p>;
+function ReferenceSelect(props: { label: string; value: string; assets: DriveAsset[]; onChange: (id: string) => void }) {
+  return (
+    <label>
+      {props.label}
+      <select value={props.value} onChange={(event) => props.onChange(event.target.value)}>
+        <option value="">不使用</option>
+        {props.assets.map((asset) => <option key={asset.id} value={asset.id}>{assetName(asset)}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function assetName(asset: DriveAsset) {
+  return asset.sub_category ? `${asset.sub_category} / ${asset.file_name}` : asset.file_name || asset.google_drive_file_id;
+}
+
+function AssetGrid(props: { assets: DriveAsset[]; selectedId: string; onSelect: (id: string) => void; category?: keyof AssetsByCategory }) {
+  if (!props.assets.length) {
+    return (
+      <div className="empty-state">
+        <strong>未找到素材</strong>
+        <span>請把圖片放入 Google Drive 對應資料夾，再按「同步 Google Drive 素材」。</span>
+      </div>
+    );
+  }
 
   return (
     <div className="asset-grid">
@@ -238,10 +270,10 @@ function AssetGrid(props: { assets: DriveAsset[]; selectedId: string; onSelect: 
           key={asset.id || asset.google_drive_file_id}
           onClick={() => asset.id && props.onSelect(asset.id)}
         >
-          {asset.thumbnail_url ? <img src={asset.thumbnail_url} alt={asset.file_name || "Drive asset"} /> : null}
+          {asset.thumbnail_url ? <img src={asset.thumbnail_url} alt={asset.file_name || "Drive 素材"} /> : <div className="image-placeholder">無預覽</div>}
           <div>
-            <strong>{asset.sub_category || asset.file_name}</strong>
-            <span>{asset.category} / {asset.mime_type}</span>
+            <strong>{assetName(asset)}</strong>
+            <span>{categoryLabels[(asset.category as keyof AssetsByCategory)] || props.category || asset.category}</span>
           </div>
         </article>
       ))}

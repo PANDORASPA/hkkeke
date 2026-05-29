@@ -3,8 +3,8 @@ import Link from "next/link";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Girl Image Generator",
-  description: "Simple Google Drive + OpenAI + Supabase image generator MVP"
+  title: "AI 女仔圖片生成器",
+  description: "Google Drive 素材庫 + OpenAI 圖片生成 + Supabase 紀錄"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -13,12 +13,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <header className="topbar">
           <Link href="/generate" className="brand">
-            AI Girl Image Generator
+            AI 女仔圖片生成器
           </Link>
           <nav>
-            <Link href="/generate">Generate</Link>
-            <Link href="/gallery">Gallery</Link>
-            <Link href="/settings">Settings</Link>
+            <Link href="/generate">生成</Link>
+            <Link href="/gallery">圖庫</Link>
+            <Link href="/settings">設定</Link>
           </nav>
         </header>
         {children}

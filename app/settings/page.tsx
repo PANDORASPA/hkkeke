@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Health = {
   supabase: { ok: boolean; message: string };
@@ -10,9 +10,51 @@ type Health = {
   env: Record<string, string>;
 };
 
+type OpenAIKeyStatus = {
+  configured: boolean;
+  masked: string;
+  source: string;
+};
+
 export default function SettingsPage() {
   const [health, setHealth] = useState<Health | null>(null);
+  const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
+  const [apiKey, setApiKey] = useState("");
   const [loading, setLoading] = useState(false);
+  const [savingKey, setSavingKey] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    fetchOpenAIKeyStatus();
+  }, []);
+
+  async function fetchOpenAIKeyStatus() {
+    const response = await fetch("/api/settings/openai-key");
+    const json = await response.json();
+    if (response.ok) setKeyStatus(json);
+  }
+
+  async function saveOpenAIKey() {
+    setSavingKey(true);
+    setMessage("正在測試並儲存 OpenAI API key...");
+    try {
+      const response = await fetch("/api/settings/openai-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey })
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "儲存失敗。");
+      setApiKey("");
+      setKeyStatus({ configured: true, masked: json.masked, source: "settings" });
+      setMessage(json.message || "OpenAI API key 已儲存。");
+      await testConnections();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "儲存失敗。");
+    } finally {
+      setSavingKey(false);
+    }
+  }
 
   async function testConnections() {
     setLoading(true);
@@ -23,44 +65,70 @@ export default function SettingsPage() {
 
   return (
     <main className="page">
-      <h1>Settings</h1>
+      <div className="page-heading">
+        <div>
+          <h1>設定</h1>
+          <p className="muted">Supabase 和 Google Drive 已放在 Vercel server-side env；OpenAI API key 可以在這裡輸入，儲存在 Supabase app_settings。</p>
+        </div>
+        <button className="primary" onClick={testConnections} disabled={loading}>
+          {loading ? "測試中..." : "測試連線"}
+        </button>
+      </div>
+
       <section className="settings-grid">
         <div className="panel">
-          <h2>Vercel Environment</h2>
-          <p className="muted">
-            在 Vercel Project Settings / Environment Variables 填以下值。Server-side keys 不會在前端顯示。
+          <h2>OpenAI API Key</h2>
+          <p className="muted">這個 key 只會送到 server route，不會存在前端 localStorage。儲存前會先打 OpenAI API 測試。</p>
+          <p className={`status ${keyStatus?.configured ? "ok" : "error"}`}>
+            <strong>狀態</strong><br />
+            {keyStatus?.configured ? `已設定：${keyStatus.masked}` : "未設定 OpenAI API key"}
           </p>
-          <EnvList />
-        </div>
-        <div className="panel">
-          <h2>Connection Tests</h2>
-          <button className="primary" onClick={testConnections} disabled={loading}>
-            {loading ? "Testing..." : "Test Connections"}
+          <label>
+            輸入 OpenAI API key
+            <input
+              type="password"
+              value={apiKey}
+              placeholder="sk-..."
+              onChange={(event) => setApiKey(event.target.value)}
+            />
+          </label>
+          <button className="primary" onClick={saveOpenAIKey} disabled={savingKey || !apiKey.trim()}>
+            {savingKey ? "儲存中..." : "測試並儲存"}
           </button>
+          {message ? <p className="muted">{message}</p> : null}
+        </div>
+
+        <div className="panel">
+          <h2>連線狀態</h2>
           {health ? (
             <div>
               <HealthCard title="Supabase" item={health.supabase} />
               <HealthCard title="Google Drive" item={health.googleDrive} />
               <HealthCard title="OpenAI" item={health.openai} />
-              <h3>Environment Status</h3>
+              <h3>環境狀態</h3>
               <StatusList items={health.env} />
-              <h3>Folder IDs</h3>
+              <h3>Drive Folder IDs</h3>
               <StatusList items={health.folders} />
             </div>
-          ) : null}
+          ) : (
+            <p className="muted">按「測試連線」檢查 Supabase、Google Drive、OpenAI 是否可用。</p>
+          )}
         </div>
+
         <div className="panel">
-          <h2>Deploy Checklist</h2>
+          <h2>正確使用方法</h2>
           <ol className="checklist">
-            <li>在 Supabase SQL Editor 執行 <code>supabase/migrations/001_ai_girl_generator.sql</code>。</li>
-            <li>建立 Google service account，下載 JSON key，將 client email 分享到整個 Drive root folder。</li>
-            <li>把所有 folder ID 和 API keys 貼入 Vercel Production / Preview / Development。</li>
-            <li>重新部署 Vercel，再按 Test Connections，三項都變綠才正式生成。</li>
+            <li>把場景圖片放到 <code>01_Scenes_場景</code> 或其子資料夾。</li>
+            <li>把女仔參考、衣服、髮型、姿勢圖片放到對應資料夾。</li>
+            <li>到「生成」頁按「同步 Google Drive 素材」。</li>
+            <li>選一張場景圖，其他參考圖可選可不選。</li>
+            <li>設定風格、髮型、衣服、表情、姿勢，再生成。</li>
+            <li>生成結果會自動上傳到 <code>06_Generated_成品</code>，並寫入 Supabase 圖庫紀錄。</li>
           </ol>
         </div>
+
         <div className="panel">
-          <h2>Drive Folder Map</h2>
-          <p className="muted">建議 root folder 叫 <strong>AI-Girl-Generator</strong>，下面照固定分類放素材。</p>
+          <h2>Google Drive 結構</h2>
           <pre>{`AI-Girl-Generator/
 01_Scenes_場景/
 02_Girl_References_女仔參考/
@@ -68,32 +136,10 @@ export default function SettingsPage() {
 04_Hair_髮型髮色/
 05_Poses_姿勢/
 06_Generated_成品/`}</pre>
+          <p className="muted">目前 app 會讀取每個主要資料夾及下一層子資料夾內的圖片。子資料夾名會變成素材分類。</p>
         </div>
       </section>
     </main>
-  );
-}
-
-function EnvList() {
-  const envs = [
-    "NEXT_PUBLIC_SUPABASE_URL",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "OPENAI_API_KEY",
-    "GOOGLE_CLIENT_EMAIL",
-    "GOOGLE_PRIVATE_KEY",
-    "GOOGLE_DRIVE_ROOT_FOLDER_ID",
-    "GOOGLE_DRIVE_SCENES_FOLDER_ID",
-    "GOOGLE_DRIVE_GIRLS_FOLDER_ID",
-    "GOOGLE_DRIVE_OUTFITS_FOLDER_ID",
-    "GOOGLE_DRIVE_HAIR_FOLDER_ID",
-    "GOOGLE_DRIVE_POSES_FOLDER_ID",
-    "GOOGLE_DRIVE_GENERATED_FOLDER_ID"
-  ];
-  return (
-    <ul>
-      {envs.map((env) => <li key={env}><code>{env}</code></li>)}
-    </ul>
   );
 }
 

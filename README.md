@@ -1,38 +1,46 @@
-# AI Girl Image Generator MVP
+# AI 女仔圖片生成器
 
-Next.js MVP for generating AI girl images from a Google Drive image library.
-
-Flow:
+這是一個本機/單人使用取向的 Next.js MVP：
 
 ```text
-Google Drive素材庫 -> /generate 控制台 -> OpenAI Image API -> Google Drive成品資料夾 -> Supabase紀錄 -> /gallery
+Google Drive 素材庫
+-> /generate 控制台
+-> OpenAI Image API 生成圖片
+-> Google Drive 成品資料夾
+-> Supabase 紀錄
+-> /gallery 圖庫
 ```
 
-## Pages
+## 頁面
 
-- `/generate` - main generator. Select scene, girl style, outfit, hair, pose, expression, body type, count 1/2/4.
-- `/gallery` - generated image history from Supabase `generated_images`.
-- `/settings` - connection checks and required environment variables.
+- `/generate`：主要生成頁。同步 Drive 素材、選場景、女仔風格、衣服、髮型、表情、身材、姿勢，生成 1/2/4 張圖。
+- `/gallery`：讀取 Supabase `generated_images`，顯示成品、prompt、Google Drive 連結和 PNG 下載。
+- `/settings`：連線測試、OpenAI API key 輸入、正確使用方法和 Drive folder map。
 
-## Google Drive Folder Structure
+## 正確使用方法
+
+1. 把圖片放入 Google Drive 對應資料夾。
+2. 到 `/generate` 按「同步 Google Drive 素材」。
+3. 至少選一張場景圖。
+4. 可選女仔參考、衣服、髮型、姿勢參考圖。
+5. 設定風格、髮型、髮色、衣服、身材、表情、姿勢。
+6. 按生成，成品會自動上傳到 Google Drive，並寫入 Supabase。
+
+## Google Drive 結構
 
 ```text
 AI-Girl-Generator/
-├── 01_Scenes_場景/
-├── 02_Girl_References_女仔參考/
-├── 03_Outfits_衣服/
-├── 04_Hair_髮型髮色/
-├── 05_Poses_姿勢/
-└── 06_Generated_成品/
-    ├── Selected_已選/
-    └── Rejected_唔要/
+01_Scenes_場景/
+02_Girl_References_女仔參考/
+03_Outfits_衣服/
+04_Hair_髮型髮色/
+05_Poses_姿勢/
+06_Generated_成品/
 ```
 
-Share these folders with the Google service account email in `GOOGLE_CLIENT_EMAIL`.
+App 會讀每個主要資料夾和下一層子資料夾內的圖片。請把 root folder 分享給 `GOOGLE_CLIENT_EMAIL` 的 service account。
 
-## Environment Variables
-
-Copy `.env.example` to `.env.local` and fill:
+## 環境變數
 
 ```text
 NEXT_PUBLIC_SUPABASE_URL=
@@ -52,32 +60,30 @@ GOOGLE_DRIVE_POSES_FOLDER_ID=
 GOOGLE_DRIVE_GENERATED_FOLDER_ID=
 ```
 
-`GOOGLE_PRIVATE_KEY` may contain escaped `\n`; the server converts it automatically.
+`OPENAI_API_KEY` 亦可在 `/settings` 頁輸入，會由 server route 儲存在 Supabase `app_settings`。
 
 ## Supabase
 
-Run the SQL in:
+執行：
 
 ```text
 supabase/migrations/001_ai_girl_generator.sql
 ```
 
-Tables:
+會建立：
 
 - `drive_assets`
 - `generated_images`
 - `app_settings`
 
-The app uses `SUPABASE_SERVICE_ROLE_KEY` only in server routes.
-
-## Development
+## 開發
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Open:
+打開：
 
 ```text
 http://localhost:3000/generate
@@ -85,14 +91,9 @@ http://localhost:3000/generate
 
 ## API Routes
 
-- `GET /api/drive/assets` - list Google Drive image assets and upsert to Supabase.
-- `POST /api/drive/upload-generated` - upload a PNG to Google Drive generated folder.
-- `POST /api/generate-image` - build prompt, call OpenAI Images API, upload to Drive, record in Supabase.
-- `GET /api/generated` - gallery data.
-- `GET /api/health` - Supabase / Google Drive / OpenAI checks.
-
-## Notes
-
-- `OPENAI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and Google service account credentials are server-side only.
-- First MVP targets Google service account Drive access, not browser OAuth.
-- Existing legacy static files (`index.html`, `app.js`, `styles.css`) are retained but the Next.js app is the new product path.
+- `GET /api/drive/assets`：讀取 Google Drive 圖片素材並同步到 Supabase。
+- `POST /api/generate-image`：組 prompt、呼叫 OpenAI Images API、上傳 Drive、寫入 Supabase。
+- `GET /api/generated`：圖庫資料。
+- `GET /api/generated/[id]/download`：從 Drive 下載指定成品 PNG。
+- `GET /api/health`：Supabase / Google Drive / OpenAI 連線檢查。
+- `GET/POST /api/settings/openai-key`：讀取狀態、測試並儲存 OpenAI API key。

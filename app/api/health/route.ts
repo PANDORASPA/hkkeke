@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getOpenAIKey } from "@/lib/app-settings";
 import { DRIVE_FOLDERS, listDriveAssets } from "@/lib/google-drive";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
@@ -31,6 +32,7 @@ export async function GET() {
   const missingSupabase = missingEnv(ENV_GROUPS.supabase);
   const missingGoogle = missingEnv(ENV_GROUPS.googleDrive);
   const missingFolders = missingEnv(ENV_GROUPS.driveFolders);
+  let openAIKey = "";
 
   const result = {
     supabase: { ok: false, message: "" },
@@ -41,7 +43,7 @@ export async function GET() {
       supabase: missingSupabase.length ? `Missing: ${missingSupabase.join(", ")}` : "set",
       googleDrive: missingGoogle.length ? `Missing: ${missingGoogle.join(", ")}` : "set",
       driveFolders: missingFolders.length ? `Missing: ${missingFolders.join(", ")}` : "set",
-      openai: process.env.OPENAI_API_KEY ? "set" : "Missing: OPENAI_API_KEY"
+      openai: "checking"
     }
   };
 
@@ -65,9 +67,11 @@ export async function GET() {
   }
 
   try {
-    if (!process.env.OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY.");
+    openAIKey = await getOpenAIKey();
+    result.env.openai = openAIKey ? "set" : "Missing: OPENAI_API_KEY";
+    if (!openAIKey) throw new Error("未設定 OpenAI API key。可在 Settings 頁輸入，或在 Vercel 設定 OPENAI_API_KEY。");
     const response = await fetch("https://api.openai.com/v1/models", {
-      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }
+      headers: { Authorization: `Bearer ${openAIKey}` }
     });
     if (!response.ok) throw new Error(`OpenAI API returned ${response.status}.`);
     result.openai = { ok: true, message: "OpenAI connected." };

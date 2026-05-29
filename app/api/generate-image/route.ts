@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildPrompt, getNegativePrompt } from "@/lib/prompt";
 import { GeneratePayload } from "@/lib/types";
 import { downloadDriveFile, makeGeneratedFileName, uploadGeneratedImage } from "@/lib/google-drive";
+import { getOpenAIKey } from "@/lib/app-settings";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export async function POST(request: NextRequest) {
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ images: results });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "生成失敗。" }, { status: 500 });
   }
 }
 
@@ -80,8 +81,8 @@ function validatePayload(payload: GeneratePayload) {
 }
 
 async function generateImageWithOpenAI(prompt: string, references: Array<{ google_drive_file_id: string; file_name?: string | null; mime_type?: string | null }>) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("Missing OPENAI_API_KEY.");
+  const apiKey = await getOpenAIKey();
+  if (!apiKey) throw new Error("未設定 OpenAI API key，請先到 Settings 輸入。");
 
   const formData = new FormData();
   formData.append("model", "gpt-image-1.5");
