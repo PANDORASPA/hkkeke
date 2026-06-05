@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getOpenAIKey } from "@/lib/app-settings";
+import { formatAppSettingsError, getOpenAIKey } from "@/lib/app-settings";
 import { DRIVE_FOLDERS, driveFetch } from "@/lib/google-drive";
 import { OPENAI_IMAGE_MODEL, testOpenAIKey } from "@/lib/openai";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -66,7 +66,10 @@ export async function GET() {
     if (error) throw error;
     result.supabase = { ok: true, message: "Supabase 已連接。" };
   } catch (error) {
-    result.supabase = { ok: false, message: error instanceof Error ? error.message : "Supabase 連接失敗。" };
+    result.supabase = {
+      ok: false,
+      message: error instanceof Error ? formatAppSettingsError(error) : "Supabase 連接失敗。"
+    };
   }
 
   try {
