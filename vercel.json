@@ -1,4 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["iad1"]
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "outputDirectory": ".next",
+  "regions": ["iad1"],
+  "functions": {
+    "app/api/generate-image/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/drive/assets/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/drive/upload-generated/route.ts": {
+      "maxDuration": 30
+    }
+  }
 }
