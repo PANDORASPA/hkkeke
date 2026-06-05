@@ -4,6 +4,9 @@ import { DRIVE_FOLDERS, driveFetch } from "@/lib/google-drive";
 import { OPENAI_IMAGE_MODEL, testOpenAIKey } from "@/lib/openai";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
+export const runtime = "nodejs";
+export const preferredRegion = "iad1";
+
 const ENV_GROUPS = {
   supabase: ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
   googleDrive: ["GOOGLE_CLIENT_EMAIL", "GOOGLE_PRIVATE_KEY"],

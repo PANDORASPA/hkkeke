@@ -8,6 +8,9 @@ import {
 import { setOpenAIKeyCookie } from "@/lib/openai-key-cookie";
 import { maskOpenAIKey, testOpenAIKey } from "@/lib/openai";
 
+export const runtime = "nodejs";
+export const preferredRegion = "iad1";
+
 export async function GET() {
   try {
     const { key, source } = await getOpenAIKeyWithSource();

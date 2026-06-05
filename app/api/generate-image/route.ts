@@ -11,6 +11,9 @@ import { buildPrompt, getNegativePrompt } from "@/lib/prompt";
 import { DriveAsset, GeneratePayload } from "@/lib/types";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
+export const runtime = "nodejs";
+export const preferredRegion = "iad1";
+
 const MAX_REFERENCE_BYTES = 50 * 1024 * 1024;
 
 type OpenAIImageResponse = {
