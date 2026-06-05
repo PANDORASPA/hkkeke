@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { formatAppSettingsError, getOpenAIKey } from "@/lib/app-settings";
+import { formatAppSettingsError, getOpenAIKeyWithSource } from "@/lib/app-settings";
 import { DRIVE_FOLDERS, driveFetch } from "@/lib/google-drive";
 import { OPENAI_IMAGE_MODEL, testOpenAIKey } from "@/lib/openai";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -52,6 +52,7 @@ export async function GET() {
       googleDrive: missingGoogle.length ? `Missing: ${missingGoogle.join(", ")}` : "set",
       driveFolders: missingFolders.length ? `Missing: ${missingFolders.join(", ")}` : "set",
       openai: "checking",
+      openaiSource: "checking",
       openaiModel: OPENAI_IMAGE_MODEL
     }
   };
@@ -65,10 +66,7 @@ export async function GET() {
     if (error) throw error;
     result.supabase = { ok: true, message: "Supabase 已連接。" };
   } catch (error) {
-    result.supabase = {
-      ok: false,
-      message: formatAppSettingsError(error)
-    };
+    result.supabase = { ok: false, message: formatAppSettingsError(error) };
   }
 
   try {
@@ -85,12 +83,13 @@ export async function GET() {
   }
 
   try {
-    const openAIKey = await getOpenAIKey();
-    result.env.openai = openAIKey ? "set" : "Missing: OPENAI_API_KEY";
-    if (!openAIKey) {
+    const { key, source } = await getOpenAIKeyWithSource();
+    result.env.openai = key ? "set" : "Missing: OPENAI_API_KEY";
+    result.env.openaiSource = source;
+    if (!key) {
       throw new Error("未設定 OpenAI API key。可在設定頁輸入，或在 Vercel 設定 OPENAI_API_KEY。");
     }
-    const test = await testOpenAIKey(openAIKey);
+    const test = await testOpenAIKey(key);
     result.openai = { ok: test.ok, message: test.message };
   } catch (error) {
     result.openai = { ok: false, message: error instanceof Error ? error.message : "OpenAI 連接失敗。" };

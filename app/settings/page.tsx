@@ -34,7 +34,7 @@ export default function SettingsPage() {
       const json = await response.json();
       if (response.ok) setKeyStatus(json);
     } catch {
-      // ignore; health check will show the real issue.
+      // Health check will show the actionable issue.
     }
   }
 
@@ -50,7 +50,7 @@ export default function SettingsPage() {
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "儲存失敗。");
       setApiKey("");
-      setKeyStatus({ configured: true, masked: json.masked, source: "settings" });
+      setKeyStatus({ configured: true, masked: json.masked, source: json.source || "cookie" });
       setMessage(json.test?.message || json.message || "OpenAI API key 已儲存。");
       await testConnections();
     } catch (error) {
@@ -78,8 +78,8 @@ export default function SettingsPage() {
         <div>
           <h1>設定</h1>
           <p className="muted">
-            Supabase 和 Google Drive 已放在 Vercel server-side env；OpenAI API key 可在這裡輸入，
-            只會送到 server route，並儲存在 Supabase <code>app_settings</code>。
+            Supabase 和 Google Drive 已放在 Vercel server-side env；OpenAI API key 可在這裡輸入。
+            儲存時會優先同步 Supabase；如果 Supabase paused，會先保存到本瀏覽器 httpOnly cookie。
           </p>
         </div>
         <button className="primary" onClick={testConnections} disabled={loading}>
@@ -92,11 +92,13 @@ export default function SettingsPage() {
           <h2>OpenAI API Key</h2>
           <p className="muted">
             測試會檢查 <code>gpt-image-1.5</code> 模型權限。若出現 HTTP 403，通常代表 OpenAI Project/API key
-            權限不足，或 GPT Image 需要先完成 Organization Verification。
+            權限不足、restricted key 未開權限，或 GPT Image 需要先完成 Organization Verification。
           </p>
           <p className={`status ${keyStatus?.configured ? "ok" : "error"}`}>
             <strong>狀態</strong><br />
-            {keyStatus?.configured ? `已設定：${keyStatus.masked}` : "未設定 OpenAI API key"}
+            {keyStatus?.configured
+              ? `已設定：${keyStatus.masked}（來源：${keyStatus.source}）`
+              : "未設定 OpenAI API key"}
           </p>
           <label>
             輸入 OpenAI API key

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOpenAIKey } from "@/lib/app-settings";
+import { formatAppSettingsError, getOpenAIKey } from "@/lib/app-settings";
 import { downloadDriveFile, makeGeneratedFileName, uploadGeneratedImage } from "@/lib/google-drive";
 import {
   OPENAI_IMAGE_MODEL,
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       .select("*")
       .eq("id", payload.sceneAssetId)
       .single();
-    if (sceneError) throw sceneError;
+    if (sceneError) throw new Error(formatAppSettingsError(sceneError));
     if (!sceneAsset) throw new Error("找不到已選場景素材，請重新同步 Google Drive 素材。");
 
     const optionalAssetIds = [
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     const optionalAssets = optionalAssetIds.length
       ? await supabase.from("drive_assets").select("*").in("id", optionalAssetIds)
       : { data: [], error: null };
-    if (optionalAssets.error) throw optionalAssets.error;
+    if (optionalAssets.error) throw new Error(formatAppSettingsError(optionalAssets.error));
 
     const references = [sceneAsset, ...((optionalAssets.data || []) as DriveAsset[])];
     const prompt = buildPrompt(payload, {
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       };
 
       const { data, error } = await supabase.from("generated_images").insert(record).select("*").single();
-      if (error) throw error;
+      if (error) throw new Error(formatAppSettingsError(error));
       results.push(data);
     }
 

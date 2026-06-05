@@ -1,3 +1,4 @@
+import { getOpenAIKeyFromCookie } from "./openai-key-cookie";
 import { getSupabaseAdmin } from "./supabase-admin";
 
 export const OPENAI_KEY_NAME = "OPENAI_API_KEY";
@@ -9,9 +10,11 @@ type SupabaseLikeError = {
   hint?: string;
 };
 
+export type OpenAIKeySource = "supabase" | "cookie" | "env" | "missing";
+
 export function formatAppSettingsError(error: unknown) {
   const err = error as SupabaseLikeError;
-  const message = err?.message || "";
+  const message = err?.message || (error instanceof Error ? error.message : "");
   const code = err?.code || "";
   const details = err?.details || "";
   const hint = err?.hint || "";
@@ -58,14 +61,24 @@ export async function setAppSetting(key: string, value: string) {
   if (error) throw new Error(formatAppSettingsError(error));
 }
 
-export async function getOpenAIKey() {
-  const envKey = process.env.OPENAI_API_KEY || "";
+export async function getOpenAIKeyWithSource() {
   try {
     const fromDb = await getAppSetting(OPENAI_KEY_NAME);
-    if (fromDb) return fromDb;
-  } catch (error) {
-    if (envKey) return envKey;
-    throw error;
+    if (fromDb) return { key: fromDb, source: "supabase" as OpenAIKeySource };
+  } catch {
+    // Supabase may be paused. Continue to cookie/env fallback.
   }
-  return envKey;
+
+  const fromCookie = await getOpenAIKeyFromCookie();
+  if (fromCookie) return { key: fromCookie, source: "cookie" as OpenAIKeySource };
+
+  const fromEnv = process.env.OPENAI_API_KEY || "";
+  if (fromEnv) return { key: fromEnv, source: "env" as OpenAIKeySource };
+
+  return { key: "", source: "missing" as OpenAIKeySource };
+}
+
+export async function getOpenAIKey() {
+  const result = await getOpenAIKeyWithSource();
+  return result.key;
 }
