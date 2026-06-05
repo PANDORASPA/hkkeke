@@ -1,5 +1,7 @@
 import { getSupabaseAdmin } from "./supabase-admin";
 
+export const OPENAI_KEY_NAME = "OPENAI_API_KEY";
+
 export async function getAppSetting(key: string) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -22,5 +24,7 @@ export async function setAppSetting(key: string, value: string) {
 }
 
 export async function getOpenAIKey() {
-  return (await getAppSetting("OPENAI_API_KEY")) || process.env.OPENAI_API_KEY || "";
+  const fromDb = await getAppSetting(OPENAI_KEY_NAME);
+  if (fromDb) return fromDb;
+  return process.env.OPENAI_API_KEY || "";
 }

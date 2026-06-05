@@ -1,21 +1,21 @@
 # AI 女仔圖片生成器
 
-這是一個本機/單人使用取向的 Next.js MVP：
+本機/單人使用取向的 Next.js MVP：
 
 ```text
 Google Drive 素材庫
 -> /generate 控制台
--> OpenAI Image API 生成圖片
+-> OpenAI Images API 生成圖片
 -> Google Drive 成品資料夾
--> Supabase 紀錄
+-> Supabase 生成紀錄
 -> /gallery 圖庫
 ```
 
 ## 頁面
 
-- `/generate`：主要生成頁。同步 Drive 素材、選場景、女仔風格、衣服、髮型、表情、身材、姿勢，生成 1/2/4 張圖。
+- `/generate`：同步 Drive 素材、選場景、女仔風格、衣服、髮型、表情、身材、姿勢，生成 1/2/4 張圖。
 - `/gallery`：讀取 Supabase `generated_images`，顯示成品、prompt、Google Drive 連結和 PNG 下載。
-- `/settings`：連線測試、OpenAI API key 輸入、正確使用方法和 Drive folder map。
+- `/settings`：OpenAI API key 輸入、連線測試、正確使用方法和 Drive folder map。
 
 ## 正確使用方法
 
@@ -25,6 +25,23 @@ Google Drive 素材庫
 4. 可選女仔參考、衣服、髮型、姿勢參考圖。
 5. 設定風格、髮型、髮色、衣服、身材、表情、姿勢。
 6. 按生成，成品會自動上傳到 Google Drive，並寫入 Supabase。
+
+## OpenAI Images API
+
+此 app 使用 OpenAI Images Edits endpoint：
+
+- 預設模型：`gpt-image-1.5`
+- 預設尺寸：`1024x1024`
+- 預設質素：`medium`
+- 場景圖和參考圖會以 `image[]` 傳入。
+- GPT Image models 預設回傳 `b64_json`，server route 會轉成 PNG buffer 後上傳 Drive。
+
+如 `/settings` 測試出現 HTTP 403，通常代表：
+
+- API key 屬於錯誤 Project。
+- Project/API key 權限未允許 Models 或 Images API。
+- GPT Image model 需要先完成 OpenAI Organization Verification。
+- 使用 restricted key 時，未開啟相關 endpoint 權限。
 
 ## Google Drive 結構
 
@@ -38,7 +55,7 @@ AI-Girl-Generator/
 06_Generated_成品/
 ```
 
-App 會讀每個主要資料夾和下一層子資料夾內的圖片。請把 root folder 分享給 `GOOGLE_CLIENT_EMAIL` 的 service account。
+App 會讀取每個主要資料夾及下一層子資料夾內的圖片。子資料夾名會變成素材分類。請把 root folder 分享給 `GOOGLE_CLIENT_EMAIL` 的 service account。
 
 ## 環境變數
 
@@ -48,6 +65,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 
 OPENAI_API_KEY=
+OPENAI_IMAGE_MODEL=gpt-image-1.5
+OPENAI_IMAGE_SIZE=1024x1024
+OPENAI_IMAGE_QUALITY=medium
 
 GOOGLE_CLIENT_EMAIL=
 GOOGLE_PRIVATE_KEY=
@@ -60,7 +80,7 @@ GOOGLE_DRIVE_POSES_FOLDER_ID=
 GOOGLE_DRIVE_GENERATED_FOLDER_ID=
 ```
 
-`OPENAI_API_KEY` 亦可在 `/settings` 頁輸入，會由 server route 儲存在 Supabase `app_settings`。
+`OPENAI_API_KEY` 亦可在 `/settings` 頁輸入，會由 server route 儲存在 Supabase `app_settings`，不會存在前端 localStorage。
 
 ## Supabase
 

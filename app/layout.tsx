@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "AI 女仔圖片生成器",
-  description: "Google Drive 素材庫 + OpenAI 圖片生成 + Supabase 紀錄"
+  description: "Google Drive 素材庫 + OpenAI Images API + Supabase 紀錄"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

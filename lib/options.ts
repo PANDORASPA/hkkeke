@@ -35,7 +35,7 @@ export const QUALITY_PROMPT =
   "ultra realistic photography, natural skin texture, real camera look, candid pose, slight imperfections, not too perfect, realistic lighting, shallow depth of field, high detail, non-cartoon, non-anime, natural proportion";
 
 export const NEGATIVE_PROMPT =
-  "no distorted hands, no extra fingers, no broken face, no AI plastic skin, no fake background text, no unreadable text, no watermark, no logo, no over-smoothed skin, no duplicate person";
+  "no distorted hands, no extra fingers, no broken face, no AI plastic skin, no fake background text, no unreadable text, no watermark, no logo, no over-smoothed skin, no duplicate person, no explicit nudity, no minor";
 
 export const OPTION_LABELS: Record<string, string> = {
   sweet: "甜美",

@@ -29,9 +29,13 @@ export default function SettingsPage() {
   }, []);
 
   async function fetchOpenAIKeyStatus() {
-    const response = await fetch("/api/settings/openai-key");
-    const json = await response.json();
-    if (response.ok) setKeyStatus(json);
+    try {
+      const response = await fetch("/api/settings/openai-key");
+      const json = await response.json();
+      if (response.ok) setKeyStatus(json);
+    } catch {
+      // ignore; health check will show the real issue.
+    }
   }
 
   async function saveOpenAIKey() {
@@ -47,7 +51,7 @@ export default function SettingsPage() {
       if (!response.ok) throw new Error(json.error || "儲存失敗。");
       setApiKey("");
       setKeyStatus({ configured: true, masked: json.masked, source: "settings" });
-      setMessage(json.message || "OpenAI API key 已儲存。");
+      setMessage(json.test?.message || json.message || "OpenAI API key 已儲存。");
       await testConnections();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "儲存失敗。");
@@ -58,9 +62,14 @@ export default function SettingsPage() {
 
   async function testConnections() {
     setLoading(true);
-    const response = await fetch("/api/health");
-    setHealth(await response.json());
-    setLoading(false);
+    try {
+      const response = await fetch("/api/health");
+      setHealth(await response.json());
+    } catch {
+      setMessage("連線測試失敗，請稍後再試。");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -68,7 +77,10 @@ export default function SettingsPage() {
       <div className="page-heading">
         <div>
           <h1>設定</h1>
-          <p className="muted">Supabase 和 Google Drive 已放在 Vercel server-side env；OpenAI API key 可以在這裡輸入，儲存在 Supabase app_settings。</p>
+          <p className="muted">
+            Supabase 和 Google Drive 已放在 Vercel server-side env；OpenAI API key 可在這裡輸入，
+            只會送到 server route，並儲存在 Supabase <code>app_settings</code>。
+          </p>
         </div>
         <button className="primary" onClick={testConnections} disabled={loading}>
           {loading ? "測試中..." : "測試連線"}
@@ -78,7 +90,10 @@ export default function SettingsPage() {
       <section className="settings-grid">
         <div className="panel">
           <h2>OpenAI API Key</h2>
-          <p className="muted">這個 key 只會送到 server route，不會存在前端 localStorage。儲存前會先打 OpenAI API 測試。</p>
+          <p className="muted">
+            測試會檢查 <code>gpt-image-1.5</code> 模型權限。若出現 HTTP 403，通常代表 OpenAI Project/API key
+            權限不足，或 GPT Image 需要先完成 Organization Verification。
+          </p>
           <p className={`status ${keyStatus?.configured ? "ok" : "error"}`}>
             <strong>狀態</strong><br />
             {keyStatus?.configured ? `已設定：${keyStatus.masked}` : "未設定 OpenAI API key"}
@@ -95,7 +110,7 @@ export default function SettingsPage() {
           <button className="primary" onClick={saveOpenAIKey} disabled={savingKey || !apiKey.trim()}>
             {savingKey ? "儲存中..." : "測試並儲存"}
           </button>
-          {message ? <p className="muted">{message}</p> : null}
+          {message ? <pre className="status-note">{message}</pre> : null}
         </div>
 
         <div className="panel">
@@ -121,7 +136,7 @@ export default function SettingsPage() {
             <li>把場景圖片放到 <code>01_Scenes_場景</code> 或其子資料夾。</li>
             <li>把女仔參考、衣服、髮型、姿勢圖片放到對應資料夾。</li>
             <li>到「生成」頁按「同步 Google Drive 素材」。</li>
-            <li>選一張場景圖，其他參考圖可選可不選。</li>
+            <li>最少選一張場景圖；其他參考圖可選可不選。</li>
             <li>設定風格、髮型、衣服、表情、姿勢，再生成。</li>
             <li>生成結果會自動上傳到 <code>06_Generated_成品</code>，並寫入 Supabase 圖庫紀錄。</li>
           </ol>

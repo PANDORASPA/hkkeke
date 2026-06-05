@@ -1,9 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildPrompt, getNegativePrompt } from "@/lib/prompt";
-import { GeneratePayload } from "@/lib/types";
-import { downloadDriveFile, makeGeneratedFileName, uploadGeneratedImage } from "@/lib/google-drive";
 import { getOpenAIKey } from "@/lib/app-settings";
+import { downloadDriveFile, makeGeneratedFileName, uploadGeneratedImage } from "@/lib/google-drive";
+import {
+  OPENAI_IMAGE_MODEL,
+  OPENAI_IMAGE_QUALITY,
+  OPENAI_IMAGE_SIZE,
+  parseOpenAIError
+} from "@/lib/openai";
+import { buildPrompt, getNegativePrompt } from "@/lib/prompt";
+import { DriveAsset, GeneratePayload } from "@/lib/types";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+
+const MAX_REFERENCE_BYTES = 50 * 1024 * 1024;
+
+type OpenAIImageResponse = {
+  data?: Array<{
+    b64_json?: string;
+    url?: string;
+  }>;
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,6 +32,7 @@ export async function POST(request: NextRequest) {
       .eq("id", payload.sceneAssetId)
       .single();
     if (sceneError) throw sceneError;
+    if (!sceneAsset) throw new Error("找不到已選場景素材，請重新同步 Google Drive 素材。");
 
     const optionalAssetIds = [
       payload.girlReferenceAssetId,
@@ -29,9 +45,12 @@ export async function POST(request: NextRequest) {
       : { data: [], error: null };
     if (optionalAssets.error) throw optionalAssets.error;
 
-    const prompt = buildPrompt(payload);
+    const references = [sceneAsset, ...((optionalAssets.data || []) as DriveAsset[])];
+    const prompt = buildPrompt(payload, {
+      scene: sceneAsset,
+      extras: (optionalAssets.data || []) as DriveAsset[]
+    });
     const negativePrompt = getNegativePrompt();
-    const references = [sceneAsset, ...(optionalAssets.data || [])];
     const results = [];
 
     for (let index = 0; index < payload.count; index += 1) {
@@ -71,31 +90,38 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ images: results });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "生成失敗。" }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "生成失敗。" },
+      { status: 500 }
+    );
   }
 }
 
 function validatePayload(payload: GeneratePayload) {
-  if (!payload.sceneAssetId) throw new Error("sceneAssetId is required.");
-  if (![1, 2, 4].includes(payload.count)) throw new Error("count must be 1, 2, or 4.");
+  if (!payload.sceneAssetId) throw new Error("請先選擇一張場景圖。");
+  if (![1, 2, 4].includes(payload.count)) throw new Error("生成數量只支援 1、2 或 4。");
 }
 
-async function generateImageWithOpenAI(prompt: string, references: Array<{ google_drive_file_id: string; file_name?: string | null; mime_type?: string | null }>) {
+async function generateImageWithOpenAI(prompt: string, references: DriveAsset[]) {
   const apiKey = await getOpenAIKey();
-  if (!apiKey) throw new Error("未設定 OpenAI API key，請先到 Settings 輸入。");
+  if (!apiKey) throw new Error("未設定 OpenAI API key，請先到設定頁輸入。");
+  if (!references.length) throw new Error("請至少選擇一張場景圖作為 OpenAI image edit 參考。");
 
   const formData = new FormData();
-  formData.append("model", "gpt-image-1.5");
+  formData.append("model", OPENAI_IMAGE_MODEL);
   formData.append("prompt", prompt);
   formData.append("n", "1");
-  formData.append("size", "1024x1024");
-  formData.append("quality", "medium");
+  formData.append("size", OPENAI_IMAGE_SIZE);
+  formData.append("quality", OPENAI_IMAGE_QUALITY);
   formData.append("output_format", "png");
 
-  for (const asset of references) {
+  for (const asset of references.slice(0, 5)) {
     const buffer = await downloadDriveFile(asset.google_drive_file_id);
+    if (buffer.length > MAX_REFERENCE_BYTES) {
+      throw new Error(`參考圖 ${asset.file_name || asset.google_drive_file_id} 超過 50MB，請先壓縮後再用。`);
+    }
     const blob = new Blob([buffer], { type: asset.mime_type || "image/png" });
-    formData.append("image", blob, asset.file_name || `${asset.google_drive_file_id}.png`);
+    formData.append("image[]", blob, asset.file_name || `${asset.google_drive_file_id}.png`);
   }
 
   const response = await fetch("https://api.openai.com/v1/images/edits", {
@@ -104,12 +130,20 @@ async function generateImageWithOpenAI(prompt: string, references: Array<{ googl
     body: formData
   });
 
-  const json = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(json.error?.message || `OpenAI image generation failed with ${response.status}.`);
+    throw new Error(await parseOpenAIError(response));
   }
 
+  const json = (await response.json()) as OpenAIImageResponse;
   const b64 = json.data?.[0]?.b64_json;
-  if (!b64) throw new Error("OpenAI response did not include b64_json.");
-  return Buffer.from(b64, "base64");
+  if (b64) return Buffer.from(b64, "base64");
+
+  const url = json.data?.[0]?.url;
+  if (url) {
+    const imageResponse = await fetch(url);
+    if (!imageResponse.ok) throw new Error(`OpenAI image URL 下載失敗：HTTP ${imageResponse.status}`);
+    return Buffer.from(await imageResponse.arrayBuffer());
+  }
+
+  throw new Error("OpenAI 回應沒有包含 b64_json 或圖片 URL。");
 }
