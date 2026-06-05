@@ -15,8 +15,7 @@ const ENV_GROUPS = {
     "GOOGLE_DRIVE_HAIR_FOLDER_ID",
     "GOOGLE_DRIVE_POSES_FOLDER_ID",
     "GOOGLE_DRIVE_GENERATED_FOLDER_ID"
-  ],
-  openai: ["OPENAI_API_KEY"]
+  ]
 };
 
 function missingEnv(keys: string[]) {
@@ -68,7 +67,7 @@ export async function GET() {
   } catch (error) {
     result.supabase = {
       ok: false,
-      message: error instanceof Error ? formatAppSettingsError(error) : "Supabase 連接失敗。"
+      message: formatAppSettingsError(error)
     };
   }
 
