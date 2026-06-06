@@ -12,7 +12,15 @@ import {
   POSES
 } from "@/lib/options";
 import { buildPrompt } from "@/lib/prompt";
-import { buildLocalManifest, downloadJson, saveGeneratedBatch, updateLocalImageStatus } from "@/lib/local-history";
+import {
+  buildLocalManifest,
+  deleteLocalAsset,
+  downloadJson,
+  loadLocalAssets,
+  saveGeneratedBatch,
+  saveLocalAsset,
+  updateLocalImageStatus
+} from "@/lib/local-history";
 import { DriveAsset, GeneratedImage, GeneratePayload } from "@/lib/types";
 
 type AssetsByCategory = {
@@ -80,14 +88,11 @@ export default function GeneratePage() {
     setLoadingAssets(true);
     setStatus("正在同步 Google Drive 素材...");
     try {
+      const localAssets = await loadLocalAssets();
       const response = await fetch("/api/drive/assets");
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "讀取素材失敗。");
-      const grouped = { scene: [], girl: [], outfit: [], hair: [], pose: [] } as AssetsByCategory;
-      for (const asset of json.assets as DriveAsset[]) {
-        const category = asset.category as keyof AssetsByCategory;
-        if (grouped[category]) grouped[category].push(asset);
-      }
+      const grouped = groupAssets([...(json.assets as DriveAsset[]), ...localAssets]);
       setAssets(grouped);
       setSelectedScene(grouped.scene[0]?.id || "");
       setSelectedGirl(grouped.girl[0]?.id || "");
@@ -95,9 +100,17 @@ export default function GeneratePage() {
       setSelectedHairAsset(grouped.hair[0]?.id || "");
       setSelectedPoseAsset(grouped.pose[0]?.id || "");
       const syncMessage = json.sync?.ok === false ? `（Supabase 同步提示：${json.sync.message}）` : "";
-      setStatus(`已同步 ${json.assets.length} 張素材。${syncMessage}`);
+      setStatus(`已同步 ${json.assets.length} 張 Drive 素材，載入 ${localAssets.length} 張本地素材。${syncMessage}`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "讀取素材失敗。");
+      try {
+        const localAssets = await loadLocalAssets();
+        const grouped = groupAssets(localAssets);
+        setAssets(grouped);
+        setSelectedScene(grouped.scene[0]?.id || "");
+        setStatus(`${error instanceof Error ? error.message : "讀取 Drive 素材失敗。"} 已載入 ${localAssets.length} 張本地素材。`);
+      } catch {
+        setStatus(error instanceof Error ? error.message : "讀取素材失敗。");
+      }
     } finally {
       setLoadingAssets(false);
     }
@@ -108,24 +121,39 @@ export default function GeneratePage() {
     setSceneVariation(null);
   }
 
-  const payload: GeneratePayload = useMemo(() => ({
-    sceneAssetId: selectedScene,
-    sceneDataUrl: sceneVariation?.data_url,
-    sceneFileName: sceneVariation?.file_name,
-    girlReferenceAssetId: selectedGirl || undefined,
-    outfitAssetId: selectedOutfitAsset || undefined,
-    hairAssetId: selectedHairAsset || undefined,
-    poseAssetId: selectedPoseAsset || undefined,
-    girlStyle: form.girlStyle,
-    hairStyle: form.hairStyle,
-    hairColor: form.hairColor,
-    outfit: form.outfit,
-    bodyType: form.bodyType,
-    expression: form.expression,
-    pose: form.pose,
-    extraPrompt: form.extraPrompt,
-    count: Number(form.count) as 1 | 2 | 4
-  }), [form, sceneVariation, selectedGirl, selectedHairAsset, selectedOutfitAsset, selectedPoseAsset, selectedScene]);
+  const payload: GeneratePayload = useMemo(() => {
+    const scene = assets.scene.find((asset) => asset.id === selectedScene);
+    const girl = assets.girl.find((asset) => asset.id === selectedGirl);
+    const outfit = assets.outfit.find((asset) => asset.id === selectedOutfitAsset);
+    const hair = assets.hair.find((asset) => asset.id === selectedHairAsset);
+    const pose = assets.pose.find((asset) => asset.id === selectedPoseAsset);
+    return {
+      sceneAssetId: selectedScene,
+      sceneDataUrl: sceneVariation?.data_url || scene?.data_url || undefined,
+      sceneFileName: sceneVariation?.file_name || scene?.file_name || undefined,
+      girlReferenceAssetId: selectedGirl || undefined,
+      girlReferenceDataUrl: girl?.data_url || undefined,
+      girlReferenceFileName: girl?.file_name || undefined,
+      outfitAssetId: selectedOutfitAsset || undefined,
+      outfitDataUrl: outfit?.data_url || undefined,
+      outfitFileName: outfit?.file_name || undefined,
+      hairAssetId: selectedHairAsset || undefined,
+      hairDataUrl: hair?.data_url || undefined,
+      hairFileName: hair?.file_name || undefined,
+      poseAssetId: selectedPoseAsset || undefined,
+      poseDataUrl: pose?.data_url || undefined,
+      poseFileName: pose?.file_name || undefined,
+      girlStyle: form.girlStyle,
+      hairStyle: form.hairStyle,
+      hairColor: form.hairColor,
+      outfit: form.outfit,
+      bodyType: form.bodyType,
+      expression: form.expression,
+      pose: form.pose,
+      extraPrompt: form.extraPrompt,
+      count: Number(form.count) as 1 | 2 | 4
+    };
+  }, [assets, form, sceneVariation, selectedGirl, selectedHairAsset, selectedOutfitAsset, selectedPoseAsset, selectedScene]);
 
   const promptPreview = useMemo(() => buildPrompt(payload), [payload]);
 
@@ -198,6 +226,37 @@ export default function GeneratePage() {
     }
   }
 
+  async function uploadLocalAsset(category: keyof AssetsByCategory, fileList: FileList | null) {
+    const file = fileList?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setStatus("請上傳圖片檔案。");
+      return;
+    }
+    const asset = await saveLocalAsset({ file, category });
+    setAssets((current) => {
+      const next = { ...current, [category]: [asset, ...current[category]] };
+      if (category === "scene" && !selectedScene) setSelectedScene(asset.id);
+      return next;
+    });
+    setStatus(`已加入本地${categoryLabels[category]}素材：${file.name}`);
+  }
+
+  async function removeLocalAsset(asset: DriveAsset) {
+    if (!asset.id || asset.source !== "local") return;
+    await deleteLocalAsset(asset.id);
+    setAssets((current) => {
+      const category = asset.category as keyof AssetsByCategory;
+      return { ...current, [category]: current[category].filter((item) => item.id !== asset.id) };
+    });
+    if (selectedScene === asset.id) setSelectedScene("");
+    if (selectedGirl === asset.id) setSelectedGirl("");
+    if (selectedOutfitAsset === asset.id) setSelectedOutfitAsset("");
+    if (selectedHairAsset === asset.id) setSelectedHairAsset("");
+    if (selectedPoseAsset === asset.id) setSelectedPoseAsset("");
+    setStatus("已刪除本地素材。");
+  }
+
   async function markResult(id: string, status: "selected" | "rejected") {
     await updateLocalImageStatus(id, status);
     setResults((current) => current.map((image) => image.id === id ? { ...image, local_status: status } : image));
@@ -225,7 +284,8 @@ export default function GeneratePage() {
             {loadingAssets ? "同步中..." : "同步 Google Drive 素材"}
           </button>
           <p className="muted">{status}</p>
-          <AssetGrid assets={assets.scene} selectedId={selectedScene} onSelect={selectScene} category="scene" />
+          <LocalAssetUploader onUpload={uploadLocalAsset} />
+          <AssetGrid assets={assets.scene} selectedId={selectedScene} onSelect={selectScene} category="scene" onDelete={removeLocalAsset} />
         </section>
 
         <section className="panel">
@@ -252,7 +312,7 @@ export default function GeneratePage() {
 
         <section className="panel">
           <h2>已選素材</h2>
-          <AssetGrid assets={selectedAssets} selectedId="" onSelect={() => undefined} />
+          <AssetGrid assets={selectedAssets} selectedId="" onSelect={() => undefined} onDelete={removeLocalAsset} />
           <div className="scene-variation">
             <button onClick={generateSimilarScene} disabled={generatingScene || !selectedScene}>
               {generatingScene ? "生成相似場景中..." : "按目前場景生成相似場景"}
@@ -350,7 +410,35 @@ function assetName(asset: DriveAsset) {
   return asset.sub_category ? `${asset.sub_category} / ${asset.file_name}` : asset.file_name || asset.google_drive_file_id;
 }
 
-function AssetGrid(props: { assets: DriveAsset[]; selectedId: string; onSelect: (id: string) => void; category?: keyof AssetsByCategory }) {
+function groupAssets(assetList: DriveAsset[]) {
+  const grouped = { scene: [], girl: [], outfit: [], hair: [], pose: [] } as AssetsByCategory;
+  for (const asset of assetList) {
+    const category = asset.category as keyof AssetsByCategory;
+    if (grouped[category]) grouped[category].push(asset);
+  }
+  return grouped;
+}
+
+function LocalAssetUploader(props: { onUpload: (category: keyof AssetsByCategory, files: FileList | null) => void }) {
+  return (
+    <div className="local-uploader">
+      {(Object.keys(categoryLabels) as Array<keyof AssetsByCategory>).map((category) => (
+        <label key={category}>
+          上傳{categoryLabels[category]}
+          <input type="file" accept="image/*" onChange={(event) => props.onUpload(category, event.target.files)} />
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function AssetGrid(props: {
+  assets: DriveAsset[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  category?: keyof AssetsByCategory;
+  onDelete?: (asset: DriveAsset) => void;
+}) {
   if (!props.assets.length) {
     return (
       <div className="empty-state">
@@ -371,7 +459,12 @@ function AssetGrid(props: { assets: DriveAsset[]; selectedId: string; onSelect: 
           {asset.thumbnail_url ? <img src={asset.thumbnail_url} alt={asset.file_name || "Drive 素材"} /> : <div className="image-placeholder">無預覽</div>}
           <div>
             <strong>{assetName(asset)}</strong>
-            <span>{categoryLabels[(asset.category as keyof AssetsByCategory)] || props.category || asset.category}</span>
+            <span>{categoryLabels[(asset.category as keyof AssetsByCategory)] || props.category || asset.category} / {asset.source === "local" ? "本地" : "Drive"}</span>
+            {asset.source === "local" && props.onDelete ? (
+              <div className="card-actions">
+                <button type="button" onClick={(event) => { event.stopPropagation(); props.onDelete?.(asset); }}>刪除本地素材</button>
+              </div>
+            ) : null}
           </div>
         </article>
       ))}

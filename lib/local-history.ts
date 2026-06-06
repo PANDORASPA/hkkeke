@@ -1,11 +1,12 @@
 "use client";
 
-import { DriveAsset, GeneratedImage, GeneratePayload } from "./types";
+import { AssetCategory, DriveAsset, GeneratedImage, GeneratePayload } from "./types";
 
 const DB_NAME = "ai-girl-generator";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const IMAGE_STORE = "images";
 const BATCH_STORE = "batches";
+const ASSET_STORE = "assets";
 
 export type LocalBatch = {
   id: string;
@@ -21,6 +22,13 @@ export type LocalGeneratedImage = GeneratedImage & {
   source: "local";
 };
 
+export type LocalAsset = DriveAsset & {
+  id: string;
+  data_url: string;
+  source: "local";
+  created_at: string;
+};
+
 function openDb() {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -34,6 +42,11 @@ function openDb() {
       }
       if (!db.objectStoreNames.contains(BATCH_STORE)) {
         db.createObjectStore(BATCH_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(ASSET_STORE)) {
+        const assets = db.createObjectStore(ASSET_STORE, { keyPath: "id" });
+        assets.createIndex("category", "category");
+        assets.createIndex("created_at", "created_at");
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -128,16 +141,74 @@ export async function updateLocalImageStatus(id: string, status: LocalGeneratedI
 
 export async function buildLocalManifest() {
   const db = await openDb();
-  const tx = db.transaction([IMAGE_STORE, BATCH_STORE], "readonly");
+  const tx = db.transaction([IMAGE_STORE, BATCH_STORE, ASSET_STORE], "readonly");
   const images = await storeGetAll<LocalGeneratedImage>(tx.objectStore(IMAGE_STORE));
   const batches = await storeGetAll<LocalBatch>(tx.objectStore(BATCH_STORE));
+  const assets = await storeGetAll<LocalAsset>(tx.objectStore(ASSET_STORE));
   db.close();
   return {
     version: 1,
     exported_at: new Date().toISOString(),
     batches,
+    assets,
     images
   };
+}
+
+export async function saveLocalAsset(input: {
+  file: File;
+  category: AssetCategory;
+  subCategory?: string;
+}) {
+  const dataUrl = await fileToDataUrl(input.file);
+  const asset: LocalAsset = {
+    id: `local-asset-${input.category}-${Date.now()}-${crypto.randomUUID()}`,
+    google_drive_file_id: "",
+    google_drive_url: null,
+    thumbnail_url: dataUrl,
+    data_url: dataUrl,
+    file_name: input.file.name,
+    mime_type: input.file.type || "image/png",
+    category: input.category,
+    sub_category: input.subCategory || "本地素材",
+    tags: [input.category, "local"],
+    created_at: new Date().toISOString(),
+    source: "local"
+  };
+
+  const db = await openDb();
+  const tx = db.transaction(ASSET_STORE, "readwrite");
+  await storePut(tx.objectStore(ASSET_STORE), asset);
+  db.close();
+  return asset;
+}
+
+export async function loadLocalAssets() {
+  const db = await openDb();
+  const tx = db.transaction(ASSET_STORE, "readonly");
+  const assets = await storeGetAll<LocalAsset>(tx.objectStore(ASSET_STORE));
+  db.close();
+  return assets.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+export async function deleteLocalAsset(id: string) {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(ASSET_STORE, "readwrite");
+    tx.objectStore(ASSET_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("刪除本地素材失敗。"));
+  });
+  db.close();
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || new Error("讀取圖片失敗。"));
+    reader.readAsDataURL(file);
+  });
 }
 
 export function downloadJson(data: unknown, fileName: string) {

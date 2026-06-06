@@ -37,10 +37,10 @@ export async function POST(request: NextRequest) {
 
     const optionalAssets = (
       await Promise.all([
-        payload.girlReferenceAssetId ? resolveAsset(supabase, payload.girlReferenceAssetId, "girl") : null,
-        payload.outfitAssetId ? resolveAsset(supabase, payload.outfitAssetId, "outfit") : null,
-        payload.hairAssetId ? resolveAsset(supabase, payload.hairAssetId, "hair") : null,
-        payload.poseAssetId ? resolveAsset(supabase, payload.poseAssetId, "pose") : null
+        resolveOptionalAsset(supabase, payload.girlReferenceAssetId, "girl", payload.girlReferenceDataUrl, payload.girlReferenceFileName),
+        resolveOptionalAsset(supabase, payload.outfitAssetId, "outfit", payload.outfitDataUrl, payload.outfitFileName),
+        resolveOptionalAsset(supabase, payload.hairAssetId, "hair", payload.hairDataUrl, payload.hairFileName),
+        resolveOptionalAsset(supabase, payload.poseAssetId, "pose", payload.poseDataUrl, payload.poseFileName)
       ])
     ).filter(Boolean) as DriveAsset[];
 
@@ -165,6 +165,32 @@ async function resolveAsset(supabase: SupabaseAdmin, assetId: string, category: 
   } satisfies DriveAsset;
 }
 
+async function resolveOptionalAsset(
+  supabase: SupabaseAdmin,
+  assetId: string | undefined,
+  category: DriveAsset["category"],
+  dataUrl?: string,
+  fileName?: string | null
+) {
+  if (!assetId && !dataUrl) return null;
+  if (dataUrl) {
+    return {
+      id: assetId || `local-${category}-${Date.now()}`,
+      google_drive_file_id: "",
+      google_drive_url: null,
+      thumbnail_url: dataUrl,
+      data_url: dataUrl,
+      file_name: fileName || `${category}-reference.png`,
+      mime_type: "image/png",
+      category,
+      sub_category: "本地素材",
+      tags: [String(category), "local"],
+      source: "local"
+    } satisfies DriveAsset;
+  }
+  return assetId ? resolveAsset(supabase, assetId, category) : null;
+}
+
 function validatePayload(payload: GeneratePayload) {
   if (!payload.sceneAssetId) throw new Error("請先選擇一張場景圖。");
   if (![1, 2, 4].includes(payload.count)) throw new Error("生成數量只支援 1、2 或 4。");
@@ -190,11 +216,12 @@ async function generateImageWithOpenAI(prompt: string, references: DriveAsset[],
   }
 
   for (const asset of (payload.sceneDataUrl ? references.slice(1, 5) : references.slice(0, 5))) {
-    const buffer = await downloadDriveFile(asset.google_drive_file_id);
+    const localImage = asset.data_url ? imageDataUrlToBuffer(asset.data_url) : null;
+    const buffer = localImage?.buffer || await downloadDriveFile(asset.google_drive_file_id);
     if (buffer.length > MAX_REFERENCE_BYTES) {
       throw new Error(`參考圖 ${asset.file_name || asset.google_drive_file_id} 超過 50MB，請先壓縮後再用。`);
     }
-    const blob = new Blob([buffer], { type: asset.mime_type || "image/png" });
+    const blob = new Blob([buffer], { type: localImage?.mimeType || asset.mime_type || "image/png" });
     formData.append("image[]", blob, asset.file_name || `${asset.google_drive_file_id}.png`);
   }
 

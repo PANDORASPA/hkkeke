@@ -5,12 +5,14 @@ export type DriveAsset = {
   google_drive_file_id: string;
   google_drive_url: string | null;
   thumbnail_url: string | null;
+  data_url?: string | null;
   file_name: string | null;
   mime_type: string | null;
   category: AssetCategory | string;
   sub_category: string | null;
   tags?: string[] | null;
   created_at?: string;
+  source?: "drive" | "local";
 };
 
 export type GeneratedImage = {
@@ -46,9 +48,17 @@ export type GeneratePayload = {
   sceneDataUrl?: string;
   sceneFileName?: string;
   girlReferenceAssetId?: string;
+  girlReferenceDataUrl?: string;
+  girlReferenceFileName?: string;
   outfitAssetId?: string;
+  outfitDataUrl?: string;
+  outfitFileName?: string;
   hairAssetId?: string;
+  hairDataUrl?: string;
+  hairFileName?: string;
   poseAssetId?: string;
+  poseDataUrl?: string;
+  poseFileName?: string;
   girlStyle: string;
   hairStyle: string;
   hairColor: string;
