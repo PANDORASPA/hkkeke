@@ -25,7 +25,7 @@ export function maskOpenAIKey(key: string) {
 
 export async function parseOpenAIError(response: Response) {
   const text = await response.text().catch(() => "");
-  if (!text) return `OpenAI API 回傳 HTTP ${response.status}。`;
+  if (!text) return `OpenAI API 回應 HTTP ${response.status}。`;
 
   try {
     const json = JSON.parse(text) as OpenAIErrorBody;
@@ -50,7 +50,7 @@ export function decorateOpenAIStatus(status: number, message: string) {
       "1. API key 是否屬於正確 Project。",
       "2. Project/API key 權限是否允許 Models/Images API。",
       "3. 帳戶是否已完成 Organization Verification；GPT Image model 可能需要先驗證組織。",
-      "4. 若使用 restricted key，請開啟相關 endpoint 權限，或建立一條 unrestricted/server-side key 再試。"
+      "4. 如使用 restricted key，請開啟相關 endpoint 權限，或建立一條 unrestricted/server-side key 再試。"
     ].join("\n");
   }
 

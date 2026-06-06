@@ -21,7 +21,7 @@ export function formatAppSettingsError(error: unknown) {
   const combined = [message, details, hint].filter(Boolean).join(" ");
 
   if (code === "42P01" || combined.includes("app_settings") || combined.includes("relation")) {
-    return "Supabase 的 app_settings 表不存在或未暴露。請先套用 supabase/migrations/001_ai_girl_generator.sql。";
+    return "Supabase 的 app_settings table 不存在或未暴露。請先套用 supabase/migrations/001_ai_girl_generator.sql。";
   }
 
   if (

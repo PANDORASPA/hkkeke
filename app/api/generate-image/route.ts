@@ -211,7 +211,7 @@ async function generateImageWithOpenAI(prompt: string, references: DriveAsset[],
 
   if (payload.sceneDataUrl) {
     const { buffer, mimeType } = imageDataUrlToBuffer(payload.sceneDataUrl);
-    if (buffer.length > MAX_REFERENCE_BYTES) throw new Error("臨時場景圖超過 50MB，請先壓縮後再用。");
+    if (buffer.length > MAX_REFERENCE_BYTES) throw new Error("臨時場景圖超過 50MB，請先壓縮後再使用。");
     formData.append("image[]", new Blob([buffer], { type: mimeType }), payload.sceneFileName || "temporary-scene.png");
   }
 
@@ -219,7 +219,7 @@ async function generateImageWithOpenAI(prompt: string, references: DriveAsset[],
     const localImage = asset.data_url ? imageDataUrlToBuffer(asset.data_url) : null;
     const buffer = localImage?.buffer || await downloadDriveFile(asset.google_drive_file_id);
     if (buffer.length > MAX_REFERENCE_BYTES) {
-      throw new Error(`參考圖 ${asset.file_name || asset.google_drive_file_id} 超過 50MB，請先壓縮後再用。`);
+      throw new Error(`參考圖 ${asset.file_name || asset.google_drive_file_id} 超過 50MB，請先壓縮後再使用。`);
     }
     const blob = new Blob([buffer], { type: localImage?.mimeType || asset.mime_type || "image/png" });
     formData.append("image[]", blob, asset.file_name || `${asset.google_drive_file_id}.png`);
