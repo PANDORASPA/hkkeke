@@ -338,6 +338,87 @@ label {
   background: var(--panel);
 }
 
+.quality-panel {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.quality-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.quality-summary span {
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.quality-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quality-grid > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.quality-grid > div > strong {
+  font-size: 13px;
+}
+
+.quality-list {
+  display: grid;
+  gap: 7px;
+}
+
+.quality-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--panel-soft);
+  color: var(--text);
+  text-align: left;
+}
+
+.quality-list span,
+.quality-list small {
+  overflow-wrap: anywhere;
+}
+
+.quality-list span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.quality-list strong {
+  font-size: 13px;
+}
+
+.quality-list small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .batch-panel-heading {
   display: flex;
   justify-content: space-between;
@@ -706,6 +787,11 @@ pre {
 
   .gallery-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quality-summary,
+  .quality-grid {
+    grid-template-columns: 1fr;
   }
 
   .bulk-panel {

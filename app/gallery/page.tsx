@@ -17,6 +17,17 @@ import { GeneratedImage } from "@/lib/types";
 
 type GalleryFilter = "all" | "selected" | "rejected" | "new";
 type SourceFilter = "all" | "local" | "supabase";
+type QualityField = "girl_style" | "outfit" | "hairstyle" | "hair_color" | "expression" | "body_type" | "pose";
+
+const qualityFields: Array<{ field: QualityField; label: string }> = [
+  { field: "girl_style", label: "女仔風格" },
+  { field: "outfit", label: "衣服" },
+  { field: "hairstyle", label: "髮型" },
+  { field: "hair_color", label: "髮色" },
+  { field: "expression", label: "表情" },
+  { field: "body_type", label: "身材" },
+  { field: "pose", label: "姿勢" }
+];
 
 export default function GalleryPage() {
   const [remoteImages, setRemoteImages] = useState<GeneratedImage[]>([]);
@@ -101,6 +112,17 @@ export default function GalleryPage() {
     }, `${batch.id}_${new Date(batch.created_at).toISOString().slice(0, 10)}.json`);
   }
 
+  function exportQualityReport() {
+    downloadJson({
+      version: 1,
+      exported_at: new Date().toISOString(),
+      summary: qualityReport.summary,
+      best: qualityReport.best,
+      weakest: qualityReport.weakest,
+      dimensions: qualityReport.dimensions
+    }, `quality-report_${new Date().toISOString().slice(0, 10)}.json`);
+  }
+
   const mergedImages = useMemo(() => {
     const localIds = new Set(localImages.map((image) => image.id));
     return [
@@ -151,6 +173,8 @@ export default function GalleryPage() {
     };
   }, [images.length, mergedImages]);
 
+  const qualityReport = useMemo(() => buildQualityReport(mergedImages), [mergedImages]);
+
   async function bulkMarkVisible(nextStatus: "selected" | "rejected" | "new") {
     if (!visibleLocalIds.length) return;
     await updateLocalImagesStatus(visibleLocalIds, nextStatus);
@@ -175,6 +199,14 @@ export default function GalleryPage() {
     setTodayOnly(false);
     setSearch(batchId);
     setStatus(`已篩選批次：${batchId}`);
+  }
+
+  function focusQuality(value: string) {
+    setFilter("all");
+    setSourceFilter("all");
+    setTodayOnly(false);
+    setSearch(value);
+    setStatus(`已篩選品質項目：${label(value)}`);
   }
 
   async function markBatch(batch: LocalBatch, nextStatus: "selected" | "rejected" | "new") {
@@ -246,6 +278,55 @@ export default function GalleryPage() {
         <span>新生成 {stats.new}</span>
         <span>已保留 {stats.selected}</span>
         <span>唔要 {stats.rejected}</span>
+      </section>
+
+      <section className="quality-panel">
+        <div className="batch-panel-heading">
+          <div>
+            <strong>品質報表</strong>
+            <p className="muted">根據「保留 / 唔要」計算保留率，幫你找出最值得重用的風格、衣服、髮型和姿勢。</p>
+          </div>
+          <button type="button" onClick={exportQualityReport} disabled={!qualityReport.summary.reviewed}>匯出品質報告</button>
+        </div>
+        <div className="quality-summary">
+          <span>已審稿 {qualityReport.summary.reviewed}</span>
+          <span>已保留 {qualityReport.summary.selected}</span>
+          <span>唔要 {qualityReport.summary.rejected}</span>
+          <span>整體保留率 {qualityReport.summary.keepRate}%</span>
+        </div>
+        {!qualityReport.summary.reviewed ? (
+          <div className="empty-state">
+            <strong>未有足夠審稿資料</strong>
+            <span>先在圖庫把圖片標記為「保留」或「唔要」，系統就會計出最高產出的組合。</span>
+          </div>
+        ) : (
+          <div className="quality-grid">
+            <div>
+              <strong>最高保留率</strong>
+              <div className="quality-list">
+                {qualityReport.best.map((item) => (
+                  <button type="button" key={`${item.field}-${item.value}`} onClick={() => focusQuality(item.value)}>
+                    <span>{item.fieldLabel}：{label(item.value)}</span>
+                    <strong>{item.keepRate}%</strong>
+                    <small>{item.selected}/{item.reviewed} 保留</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <strong>需要改善</strong>
+              <div className="quality-list">
+                {qualityReport.weakest.map((item) => (
+                  <button type="button" key={`${item.field}-${item.value}`} onClick={() => focusQuality(item.value)}>
+                    <span>{item.fieldLabel}：{label(item.value)}</span>
+                    <strong>{item.keepRate}%</strong>
+                    <small>{item.selected}/{item.reviewed} 保留</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="batch-panel">
@@ -392,6 +473,11 @@ function matchesSearch(image: GeneratedImage, search: string) {
   return [
     image.file_name,
     image.batch_id,
+    image.scene_asset_id,
+    image.girl_reference_asset_id,
+    image.outfit_asset_id,
+    image.hair_asset_id,
+    image.pose_asset_id,
     image.prompt,
     image.girl_style,
     image.hairstyle,
@@ -401,4 +487,61 @@ function matchesSearch(image: GeneratedImage, search: string) {
     image.body_type,
     image.pose
   ].some((value) => String(value || "").toLowerCase().includes(keyword));
+}
+
+function buildQualityReport(images: GeneratedImage[]) {
+  type QualityItem = {
+    field: QualityField;
+    fieldLabel: string;
+    value: string;
+    reviewed: number;
+    selected: number;
+    rejected: number;
+    keepRate: number;
+  };
+
+  const reviewedImages = images.filter((image) => image.local_status === "selected" || image.local_status === "rejected");
+  const selected = reviewedImages.filter((image) => image.local_status === "selected").length;
+  const rejected = reviewedImages.filter((image) => image.local_status === "rejected").length;
+  const dimensions: Record<string, QualityItem[]> = {};
+  const allItems: QualityItem[] = [];
+
+  for (const config of qualityFields) {
+    const grouped = new Map<string, { selected: number; rejected: number }>();
+    for (const image of reviewedImages) {
+      const value = String(image[config.field] || "未設定");
+      const current = grouped.get(value) || { selected: 0, rejected: 0 };
+      if (image.local_status === "selected") current.selected += 1;
+      if (image.local_status === "rejected") current.rejected += 1;
+      grouped.set(value, current);
+    }
+
+    const items = Array.from(grouped.entries()).map(([value, counts]) => {
+      const reviewed = counts.selected + counts.rejected;
+      return {
+        field: config.field,
+        fieldLabel: config.label,
+        value,
+        reviewed,
+        selected: counts.selected,
+        rejected: counts.rejected,
+        keepRate: reviewed ? Math.round((counts.selected / reviewed) * 100) : 0
+      };
+    }).sort((a, b) => b.reviewed - a.reviewed || b.keepRate - a.keepRate);
+
+    dimensions[config.field] = items;
+    allItems.push(...items.filter((item) => item.reviewed >= 1));
+  }
+
+  return {
+    summary: {
+      reviewed: reviewedImages.length,
+      selected,
+      rejected,
+      keepRate: reviewedImages.length ? Math.round((selected / reviewedImages.length) * 100) : 0
+    },
+    best: [...allItems].sort((a, b) => b.keepRate - a.keepRate || b.reviewed - a.reviewed).slice(0, 6),
+    weakest: [...allItems].sort((a, b) => a.keepRate - b.keepRate || b.reviewed - a.reviewed).slice(0, 6),
+    dimensions
+  };
 }
