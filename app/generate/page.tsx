@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BODY_TYPES,
   EXPRESSIONS,
@@ -37,6 +37,19 @@ type SceneVariation = {
   file_name: string;
   prompt: string;
   created_at: string;
+};
+
+type QueueJobStatus = "pending" | "running" | "done" | "failed";
+
+type QueueJob = {
+  id: string;
+  label: string;
+  payload: GeneratePayload;
+  assets: DriveAsset[];
+  status: QueueJobStatus;
+  message: string;
+  createdAt: string;
+  results?: GeneratedImage[];
 };
 
 const emptyAssets: AssetsByCategory = {
@@ -79,6 +92,10 @@ export default function GeneratePage() {
   const [generatingScene, setGeneratingScene] = useState(false);
   const [sceneVariation, setSceneVariation] = useState<SceneVariation | null>(null);
   const [results, setResults] = useState<GeneratedImage[]>([]);
+  const [queue, setQueue] = useState<QueueJob[]>([]);
+  const [queueRunning, setQueueRunning] = useState(false);
+  const queueRef = useRef<QueueJob[]>([]);
+  const queueRunningRef = useRef(false);
 
   useEffect(() => {
     fetchAssets();
@@ -168,6 +185,27 @@ export default function GeneratePage() {
     [assets, selectedScene, selectedGirl, selectedOutfitAsset, selectedHairAsset, selectedPoseAsset]
   );
 
+  function updateQueue(updater: (current: QueueJob[]) => QueueJob[]) {
+    const next = updater(queueRef.current);
+    queueRef.current = next;
+    setQueue(next);
+  }
+
+  async function runGenerationPayload(payloadSnapshot: GeneratePayload, assetSnapshot: DriveAsset[]) {
+    const response = await fetch("/api/generate-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payloadSnapshot)
+    });
+    const json = await response.json();
+    if (!response.ok) throw new Error(json.error || "生成失敗。");
+    const savedImages = await saveGeneratedBatch({ images: json.images, payload: payloadSnapshot, assets: assetSnapshot });
+    return {
+      images: savedImages,
+      warning: json.warnings?.length ? ` 提示：${json.warnings.join(" ")}` : ""
+    };
+  }
+
   async function generate() {
     if (!selectedScene) {
       setStatus("請先選擇一張場景圖。把圖片放入 Google Drive 的 01_Scenes_場景 後，按「同步素材」。");
@@ -178,22 +216,73 @@ export default function GeneratePage() {
     setResults([]);
     setStatus("正在生成圖片，請等候...");
     try {
-      const response = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error || "生成失敗。");
-      const savedImages = await saveGeneratedBatch({ images: json.images, payload, assets: selectedAssets });
-      setResults(savedImages);
-      const warning = json.warnings?.length ? ` 提示：${json.warnings.join(" ")}` : "";
-      setStatus(`完成生成 ${savedImages.length} 張圖片，已保存到本地歷史。${warning}`);
+      const generated = await runGenerationPayload(payload, selectedAssets);
+      setResults(generated.images);
+      setStatus(`完成生成 ${generated.images.length} 張圖片，已保存到本地歷史。${generated.warning}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "生成失敗。");
     } finally {
       setGenerating(false);
     }
+  }
+
+  function enqueueCurrent() {
+    if (!selectedScene) {
+      setStatus("請先選擇一張場景圖，才可以加入列隊。");
+      return;
+    }
+    const scene = assets.scene.find((asset) => asset.id === selectedScene);
+    const sceneLabel = sceneVariation ? "相似場景" : scene ? assetName(scene) : "未命名場景";
+    const job: QueueJob = {
+      id: crypto.randomUUID(),
+      label: `${sceneLabel} / ${label(form.girlStyle)} / ${label(form.outfit)} / ${form.count} 張`,
+      payload: { ...payload },
+      assets: [...selectedAssets],
+      status: "pending",
+      message: "等待生成",
+      createdAt: new Date().toISOString()
+    };
+    updateQueue((current) => [job, ...current]);
+    setStatus("已加入列隊。你可以繼續改設定再加入下一個任務。");
+  }
+
+  async function processQueue() {
+    if (queueRunningRef.current) return;
+    queueRunningRef.current = true;
+    setQueueRunning(true);
+    setStatus("列隊開始處理，會逐個任務生成，減少 rate limit 風險。");
+    try {
+      while (true) {
+        const job = queueRef.current.find((item) => item.status === "pending");
+        if (!job) break;
+        updateQueue((current) => current.map((item) => item.id === job.id ? { ...item, status: "running", message: "生成中..." } : item));
+        try {
+          const generated = await runGenerationPayload(job.payload, job.assets);
+          setResults(generated.images);
+          updateQueue((current) => current.map((item) => (
+            item.id === job.id
+              ? { ...item, status: "done", message: `完成 ${generated.images.length} 張。${generated.warning}`.trim(), results: generated.images }
+              : item
+          )));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "生成失敗。";
+          updateQueue((current) => current.map((item) => item.id === job.id ? { ...item, status: "failed", message } : item));
+        }
+      }
+      setStatus("列隊已處理完成。失敗任務可以單個重試。");
+    } finally {
+      queueRunningRef.current = false;
+      setQueueRunning(false);
+    }
+  }
+
+  function retryQueueJob(id: string) {
+    updateQueue((current) => current.map((item) => item.id === id ? { ...item, status: "pending", message: "等待重試" } : item));
+    void processQueue();
+  }
+
+  function clearFinishedQueueJobs() {
+    updateQueue((current) => current.filter((item) => item.status !== "done"));
   }
 
   async function generateSimilarScene() {
@@ -211,6 +300,8 @@ export default function GeneratePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sceneAssetId: scene.google_drive_file_id,
+          sceneDataUrl: scene.data_url,
+          sceneFileName: scene.file_name,
           sceneName: assetName(scene),
           extraPrompt: form.extraPrompt
         })
@@ -334,6 +425,34 @@ export default function GeneratePage() {
           <button className="primary" onClick={generate} disabled={generating || !selectedScene}>
             {generating ? "生成中..." : `生成 ${form.count} 張圖片`}
           </button>
+          <div className="queue-panel">
+            <div>
+              <strong>生成列隊</strong>
+              <p className="muted">適合一次排幾組場景/造型，系統會逐個生成。請保持此頁開住直到完成。</p>
+            </div>
+            <div className="card-actions">
+              <button type="button" onClick={enqueueCurrent} disabled={!selectedScene}>加入列隊</button>
+              <button type="button" onClick={processQueue} disabled={queueRunning || !queue.some((job) => job.status === "pending")}>
+                {queueRunning ? "列隊處理中..." : "開始列隊"}
+              </button>
+              <button type="button" onClick={clearFinishedQueueJobs} disabled={!queue.some((job) => job.status === "done")}>清走完成</button>
+            </div>
+            {queue.length ? (
+              <div className="queue-list">
+                {queue.map((job) => (
+                  <article className={`queue-item ${job.status}`} key={job.id}>
+                    <div>
+                      <strong>{job.label}</strong>
+                      <span>{queueStatusLabel(job.status)} / {job.message}</span>
+                    </div>
+                    {job.status === "failed" ? <button type="button" onClick={() => retryQueueJob(job.id)}>重試</button> : null}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">未有列隊任務。</p>
+            )}
+          </div>
           <div className="prompt-preview">
             <strong>Prompt 預覽</strong>
             <pre>{promptPreview}</pre>
@@ -381,6 +500,13 @@ function statusLabel(value: string) {
   if (value === "selected") return "已保留";
   if (value === "rejected") return "唔要";
   return "新生成";
+}
+
+function queueStatusLabel(value: QueueJobStatus) {
+  if (value === "pending") return "等待中";
+  if (value === "running") return "生成中";
+  if (value === "done") return "完成";
+  return "失敗";
 }
 
 function Select(props: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
