@@ -4,20 +4,26 @@ import { useEffect, useMemo, useState } from "react";
 import {
   buildLocalManifest,
   deleteLocalImage,
+  deleteLocalImages,
   downloadJson,
   loadLocalImages,
-  updateLocalImageStatus
+  updateLocalImageStatus,
+  updateLocalImagesStatus
 } from "@/lib/local-history";
 import { OPTION_LABELS } from "@/lib/options";
 import { GeneratedImage } from "@/lib/types";
 
 type GalleryFilter = "all" | "selected" | "rejected" | "new";
+type SourceFilter = "all" | "local" | "supabase";
 
 export default function GalleryPage() {
   const [remoteImages, setRemoteImages] = useState<GeneratedImage[]>([]);
   const [localImages, setLocalImages] = useState<GeneratedImage[]>([]);
   const [status, setStatus] = useState("正在讀取圖庫...");
   const [filter, setFilter] = useState<GalleryFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [search, setSearch] = useState("");
+  const [todayOnly, setTodayOnly] = useState(false);
   const [copyMessage, setCopyMessage] = useState("");
 
   useEffect(() => {
@@ -59,13 +65,17 @@ export default function GalleryPage() {
   async function removeImage(id: string) {
     await deleteLocalImage(id);
     setLocalImages((current) => current.filter((image) => image.id !== id));
-    setStatus("已刪除本地圖片。");
+    setStatus("已刪除本機圖片。");
   }
 
   async function copyPrompt(prompt?: string | null) {
     if (!prompt) return;
-    await navigator.clipboard.writeText(prompt);
-    setCopyMessage("已複製 prompt。");
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopyMessage("已複製 prompt。");
+    } catch {
+      setCopyMessage("複製失敗，請手動複製。");
+    }
     window.setTimeout(() => setCopyMessage(""), 1800);
   }
 
@@ -74,16 +84,56 @@ export default function GalleryPage() {
     downloadJson(manifest, `ai-girl-generator_${new Date().toISOString().slice(0, 10)}.json`);
   }
 
-  const images = useMemo(() => {
+  const mergedImages = useMemo(() => {
     const localIds = new Set(localImages.map((image) => image.id));
-    const merged = [
+    return [
       ...localImages,
       ...remoteImages.filter((image) => !localIds.has(image.id))
-    ];
-    return merged
+    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [localImages, remoteImages]);
+
+  const images = useMemo(() => {
+    return mergedImages
       .filter((image) => filter === "all" || (image.local_status || "new") === filter)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [filter, localImages, remoteImages]);
+      .filter((image) => sourceFilter === "all" || image.source === sourceFilter)
+      .filter((image) => !todayOnly || isToday(image.created_at))
+      .filter((image) => matchesSearch(image, search));
+  }, [filter, mergedImages, search, sourceFilter, todayOnly]);
+
+  const visibleLocalIds = useMemo(
+    () => images.filter((image) => image.source === "local").map((image) => image.id),
+    [images]
+  );
+
+  const stats = useMemo(() => {
+    return {
+      total: mergedImages.length,
+      visible: images.length,
+      local: mergedImages.filter((image) => image.source === "local").length,
+      supabase: mergedImages.filter((image) => image.source === "supabase").length,
+      new: mergedImages.filter((image) => (image.local_status || "new") === "new").length,
+      selected: mergedImages.filter((image) => image.local_status === "selected").length,
+      rejected: mergedImages.filter((image) => image.local_status === "rejected").length
+    };
+  }, [images.length, mergedImages]);
+
+  async function bulkMarkVisible(nextStatus: "selected" | "rejected" | "new") {
+    if (!visibleLocalIds.length) return;
+    await updateLocalImagesStatus(visibleLocalIds, nextStatus);
+    setLocalImages((current) =>
+      current.map((image) => visibleLocalIds.includes(image.id) ? { ...image, local_status: nextStatus } : image)
+    );
+    setStatus(`已批量標記 ${visibleLocalIds.length} 張本機圖片為「${statusLabel(nextStatus)}」。`);
+  }
+
+  async function bulkDeleteVisible() {
+    if (!visibleLocalIds.length) return;
+    const ok = window.confirm(`確定刪除目前可見的 ${visibleLocalIds.length} 張本機圖片？這只會刪除本機歷史，不會刪 Google Drive。`);
+    if (!ok) return;
+    await deleteLocalImages(visibleLocalIds);
+    setLocalImages((current) => current.filter((image) => !visibleLocalIds.includes(image.id)));
+    setStatus(`已刪除 ${visibleLocalIds.length} 張可見本機圖片。`);
+  }
 
   return (
     <main className="page">
@@ -91,7 +141,7 @@ export default function GalleryPage() {
         <div>
           <h1>圖庫</h1>
           <p className="muted">
-            這裡會合併 Supabase 記錄同本機瀏覽器歷史；就算 Supabase 暫停，本機生成過的圖片仍然可以下載和整理。
+            這裡合併 Supabase 記錄同本機瀏覽器歷史。大量生成後，可以先搜尋、只看今日、批量保留或批量標記唔要。
           </p>
         </div>
         <div className="toolbar">
@@ -103,6 +153,39 @@ export default function GalleryPage() {
 
       <p className="status">{status}{copyMessage ? ` / ${copyMessage}` : ""}</p>
 
+      <section className="gallery-tools">
+        <label>
+          搜尋
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="搜尋 prompt / 衣服 / 髮型 / 表情"
+          />
+        </label>
+        <label>
+          來源
+          <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as SourceFilter)}>
+            <option value="all">全部來源</option>
+            <option value="local">本機</option>
+            <option value="supabase">Supabase</option>
+          </select>
+        </label>
+        <label className="check-row">
+          <input type="checkbox" checked={todayOnly} onChange={(event) => setTodayOnly(event.target.checked)} />
+          只看今日
+        </label>
+      </section>
+
+      <section className="gallery-stats">
+        <span>全部 {stats.total}</span>
+        <span>目前顯示 {stats.visible}</span>
+        <span>本機 {stats.local}</span>
+        <span>Supabase {stats.supabase}</span>
+        <span>新生成 {stats.new}</span>
+        <span>已保留 {stats.selected}</span>
+        <span>唔要 {stats.rejected}</span>
+      </section>
+
       <div className="filter-row">
         <button className={filter === "all" ? "primary" : ""} onClick={() => setFilter("all")}>全部</button>
         <button className={filter === "new" ? "primary" : ""} onClick={() => setFilter("new")}>新生成</button>
@@ -110,10 +193,20 @@ export default function GalleryPage() {
         <button className={filter === "rejected" ? "primary" : ""} onClick={() => setFilter("rejected")}>唔要</button>
       </div>
 
+      <div className="bulk-panel">
+        <span>目前可批量處理 {visibleLocalIds.length} 張本機圖片。</span>
+        <div className="card-actions">
+          <button type="button" disabled={!visibleLocalIds.length} onClick={() => bulkMarkVisible("selected")}>批量保留可見</button>
+          <button type="button" disabled={!visibleLocalIds.length} onClick={() => bulkMarkVisible("rejected")}>批量唔要可見</button>
+          <button type="button" disabled={!visibleLocalIds.length} onClick={() => bulkMarkVisible("new")}>批量還原可見</button>
+          <button type="button" disabled={!visibleLocalIds.length} onClick={bulkDeleteVisible}>刪除可見本機圖片</button>
+        </div>
+      </div>
+
       {!images.length ? (
         <div className="empty-state">
-          <strong>未有圖片</strong>
-          <span>到「生成圖片」頁選場景並生成，完成後會自動出現在這裡。</span>
+          <strong>未有符合條件的圖片</strong>
+          <span>可以清除搜尋或篩選；如果未生成過圖片，請到「生成圖片」頁建立列隊。</span>
         </div>
       ) : null}
 
@@ -121,7 +214,7 @@ export default function GalleryPage() {
         {images.map((image) => (
           <article className="image-card" key={image.id}>
             {image.data_url || image.thumbnail_url ? (
-              <img src={image.data_url || image.thumbnail_url || ""} alt={image.prompt || "生成圖片"} />
+              <img src={image.data_url || image.thumbnail_url || ""} alt="生成圖片" />
             ) : (
               <div className="image-placeholder">無預覽</div>
             )}
@@ -176,4 +269,28 @@ function sourceLabel(value?: string | null) {
   if (value === "local") return "本機";
   if (value === "supabase") return "Supabase";
   return "Supabase";
+}
+
+function isToday(value: string) {
+  const date = new Date(value);
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+}
+
+function matchesSearch(image: GeneratedImage, search: string) {
+  const keyword = search.trim().toLowerCase();
+  if (!keyword) return true;
+  return [
+    image.file_name,
+    image.prompt,
+    image.girl_style,
+    image.hairstyle,
+    image.hair_color,
+    image.outfit,
+    image.expression,
+    image.body_type,
+    image.pose
+  ].some((value) => String(value || "").toLowerCase().includes(keyword));
 }

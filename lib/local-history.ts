@@ -157,18 +157,41 @@ export async function updateLocalImageStatus(id: string, status: LocalGeneratedI
   db.close();
 }
 
+export async function updateLocalImagesStatus(ids: string[], status: LocalGeneratedImage["local_status"]) {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(IMAGE_STORE, "readwrite");
+    const store = tx.objectStore(IMAGE_STORE);
+    for (const id of ids) {
+      const request = store.get(id);
+      request.onsuccess = () => {
+        const image = request.result as LocalGeneratedImage | undefined;
+        if (image) store.put({ ...image, local_status: status });
+      };
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("批量更新本地狀態失敗。"));
+  });
+  db.close();
+}
+
 export async function deleteLocalImage(id: string) {
+  await deleteLocalImages([id]);
+}
+
+export async function deleteLocalImages(ids: string[]) {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction([IMAGE_STORE, BATCH_STORE], "readwrite");
-    tx.objectStore(IMAGE_STORE).delete(id);
+    const imageStore = tx.objectStore(IMAGE_STORE);
     const batchStore = tx.objectStore(BATCH_STORE);
+    for (const id of ids) imageStore.delete(id);
     const batchRequest = batchStore.getAll();
     batchRequest.onsuccess = () => {
       const batches = batchRequest.result as LocalBatch[];
       for (const batch of batches) {
-        if (batch.image_ids.includes(id)) {
-          batchStore.put({ ...batch, image_ids: batch.image_ids.filter((imageId) => imageId !== id) });
+        if (batch.image_ids.some((id) => ids.includes(id))) {
+          batchStore.put({ ...batch, image_ids: batch.image_ids.filter((imageId) => !ids.includes(imageId)) });
         }
       }
     };
