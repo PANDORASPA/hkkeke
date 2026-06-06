@@ -6,8 +6,8 @@ export type PromptReferences = {
   extras?: DriveAsset[];
 };
 
-// 參考圖會在 OpenAI Images Edits route 以 image[] 傳入；
-// 這裡同時把檔名/分類寫入 prompt，令模型更清楚每張參考圖用途。
+// 參考圖會在 OpenAI Images Edits route 以 image[] 傳入。
+// 這裡同時把檔名和分類寫入 prompt，令模型更清楚每張參考圖用途。
 export function buildPrompt(
   payload: GeneratePayload,
   references?: PromptReferences

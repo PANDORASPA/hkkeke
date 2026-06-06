@@ -262,16 +262,38 @@ label {
 }
 
 .queue-panel,
-.queue-list {
+.queue-list,
+.factory-panel {
   display: grid;
   gap: 10px;
 }
 
-.queue-panel {
+.queue-panel,
+.factory-panel {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-soft);
+}
+
+.factory-panel textarea {
+  min-height: 84px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.check-row input {
+  width: auto;
+  margin: 0;
 }
 
 .queue-item {

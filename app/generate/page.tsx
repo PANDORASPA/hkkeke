@@ -82,6 +82,13 @@ export default function GeneratePage() {
     count: "1",
     extraPrompt: ""
   });
+  const [factory, setFactory] = useState({
+    targetImages: "100",
+    imagesPerJob: "4",
+    queueDelaySeconds: "8",
+    useReferenceAssets: true,
+    extraPrompt: ""
+  });
   const [generating, setGenerating] = useState(false);
   const [generatingScene, setGeneratingScene] = useState(false);
   const [sceneVariation, setSceneVariation] = useState<SceneVariation | null>(null);
@@ -202,6 +209,64 @@ export default function GeneratePage() {
     [assets, selectedScene, selectedGirl, selectedOutfitAsset, selectedHairAsset, selectedPoseAsset]
   );
 
+  function buildPayloadFromAssets(input: {
+    scene: DriveAsset;
+    girl?: DriveAsset;
+    outfitAsset?: DriveAsset;
+    hairAsset?: DriveAsset;
+    poseAsset?: DriveAsset;
+    girlStyle: string;
+    hairStyle: string;
+    hairColor: string;
+    outfit: string;
+    bodyType: string;
+    expression: string;
+    pose: string;
+    count: 1 | 2 | 4;
+    extraPrompt?: string;
+  }) {
+    const builtPayload: GeneratePayload = {
+      sceneAssetId: input.scene.id || input.scene.google_drive_file_id,
+      sceneDataUrl: input.scene.data_url || undefined,
+      sceneFileName: input.scene.file_name || undefined,
+      girlReferenceAssetId: input.girl?.id || undefined,
+      girlReferenceDataUrl: input.girl?.data_url || undefined,
+      girlReferenceFileName: input.girl?.file_name || undefined,
+      outfitAssetId: input.outfitAsset?.id || undefined,
+      outfitDataUrl: input.outfitAsset?.data_url || undefined,
+      outfitFileName: input.outfitAsset?.file_name || undefined,
+      hairAssetId: input.hairAsset?.id || undefined,
+      hairDataUrl: input.hairAsset?.data_url || undefined,
+      hairFileName: input.hairAsset?.file_name || undefined,
+      poseAssetId: input.poseAsset?.id || undefined,
+      poseDataUrl: input.poseAsset?.data_url || undefined,
+      poseFileName: input.poseAsset?.file_name || undefined,
+      girlStyle: input.girlStyle,
+      hairStyle: input.hairStyle,
+      hairColor: input.hairColor,
+      outfit: input.outfit,
+      bodyType: input.bodyType,
+      expression: input.expression,
+      pose: input.pose,
+      extraPrompt: input.extraPrompt,
+      count: input.count
+    };
+    const builtAssets = [input.scene, input.girl, input.outfitAsset, input.hairAsset, input.poseAsset].filter(Boolean) as DriveAsset[];
+    return { payload: builtPayload, assets: builtAssets };
+  }
+
+  function makeQueueJob(input: { label: string; payload: GeneratePayload; assets: DriveAsset[]; message?: string }): QueueJob {
+    return {
+      id: crypto.randomUUID(),
+      label: input.label,
+      payload: input.payload,
+      assets: input.assets,
+      status: "pending",
+      message: input.message || "等待生成",
+      createdAt: new Date().toISOString()
+    };
+  }
+
   function updateQueue(updater: (current: QueueJob[]) => QueueJob[]) {
     const next = updater(queueRef.current);
     queueRef.current = next;
@@ -253,17 +318,77 @@ export default function GeneratePage() {
     }
     const scene = assets.scene.find((asset) => asset.id === selectedScene);
     const sceneLabel = sceneVariation ? "相似場景" : scene ? assetName(scene) : "未命名場景";
-    const job: QueueJob = {
-      id: crypto.randomUUID(),
+    const job = makeQueueJob({
       label: `${sceneLabel} / ${label(form.girlStyle)} / ${label(form.outfit)} / ${form.count} 張`,
       payload: { ...payload },
-      assets: [...selectedAssets],
-      status: "pending",
-      message: "等待生成",
-      createdAt: new Date().toISOString()
-    };
+      assets: [...selectedAssets]
+    });
     updateQueue((current) => [job, ...current]);
     setStatus("已加入列隊。你可以繼續改設定再加入下一個任務。");
+  }
+
+  function enqueueFactoryBatch(autoStart = false) {
+    const scenes = assets.scene;
+    if (!scenes.length) {
+      setStatus("批量生產需要至少一張場景圖。請先同步 Google Drive 素材或上傳本地場景。");
+      return;
+    }
+
+    const targetImages = clampNumber(Number(factory.targetImages), 1, 500);
+    const preferredCount = normalizeCount(Number(factory.imagesPerJob));
+    const jobs: QueueJob[] = [];
+    let remaining = targetImages;
+    let index = 0;
+
+    while (remaining > 0) {
+      const count = normalizeCount(Math.min(preferredCount, remaining));
+      const scene = scenes[index % scenes.length];
+      const girl = factory.useReferenceAssets ? pickOptional(assets.girl, index) : undefined;
+      const outfitAsset = factory.useReferenceAssets ? pickOptional(assets.outfit, index + 1) : undefined;
+      const hairAsset = factory.useReferenceAssets ? pickOptional(assets.hair, index + 2) : undefined;
+      const poseAsset = factory.useReferenceAssets ? pickOptional(assets.pose, index + 3) : undefined;
+      const girlStyle = GIRL_STYLES[index % GIRL_STYLES.length];
+      const hairStyle = HAIR_STYLES[(index * 2 + 1) % HAIR_STYLES.length];
+      const hairColor = HAIR_COLORS[(index * 3 + 2) % HAIR_COLORS.length];
+      const outfit = OUTFITS[(index * 5 + 1) % OUTFITS.length];
+      const bodyType = BODY_TYPES[(index * 7 + 3) % BODY_TYPES.length];
+      const expression = EXPRESSIONS[(index * 2 + 4) % EXPRESSIONS.length];
+      const pose = POSES[(index * 3 + 1) % POSES.length];
+      const extraPrompt = [form.extraPrompt, factory.extraPrompt, `Batch production variation ${index + 1}: keep this result visually distinct from the previous generated images.`]
+        .filter((value) => value.trim())
+        .join("\n");
+
+      const built = buildPayloadFromAssets({
+        scene,
+        girl,
+        outfitAsset,
+        hairAsset,
+        poseAsset,
+        girlStyle,
+        hairStyle,
+        hairColor,
+        outfit,
+        bodyType,
+        expression,
+        pose,
+        count,
+        extraPrompt
+      });
+
+      jobs.push(makeQueueJob({
+        label: `批量 ${index + 1}: ${assetName(scene)} / ${label(girlStyle)} / ${label(outfit)} / ${count} 張`,
+        payload: built.payload,
+        assets: built.assets,
+        message: "批量生產等待生成"
+      }));
+
+      remaining -= count;
+      index += 1;
+    }
+
+    updateQueue((current) => [...jobs, ...current]);
+    setStatus(`已建立 ${jobs.length} 個批量任務，目標約 ${targetImages} 張。${autoStart ? "列隊即將開始。" : "可按「開始列隊」生產。"}`);
+    if (autoStart) window.setTimeout(() => void processQueue(), 50);
   }
 
   async function processQueue() {
@@ -284,6 +409,13 @@ export default function GeneratePage() {
               ? { ...item, status: "done", message: `完成 ${generated.images.length} 張。${generated.warning}`.trim(), results: generated.images }
               : item
           )));
+          if (queueRef.current.some((item) => item.status === "pending")) {
+            const seconds = clampNumber(Number(factory.queueDelaySeconds), 0, 120);
+            if (seconds > 0) {
+              setStatus(`上一個任務已完成，等待 ${seconds} 秒後繼續下一個任務。`);
+              await delay(seconds * 1000);
+            }
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : "生成失敗。";
           updateQueue((current) => current.map((item) => item.id === job.id ? { ...item, status: "failed", message } : item));
@@ -467,6 +599,69 @@ export default function GeneratePage() {
               </article>
             ) : null}
           </div>
+          <div className="factory-panel">
+            <div>
+              <strong>批量生產工廠</strong>
+              <p className="muted">用現有場景和設定自動組合大量任務；適合一天 100 張以上的生產流。</p>
+            </div>
+            <div className="controls-grid">
+              <label>
+                目標張數
+                <input
+                  type="number"
+                  min="1"
+                  max="500"
+                  value={factory.targetImages}
+                  onChange={(event) => setFactory({ ...factory, targetImages: event.target.value })}
+                />
+              </label>
+              <label>
+                每任務張數
+                <select
+                  value={factory.imagesPerJob}
+                  onChange={(event) => setFactory({ ...factory, imagesPerJob: event.target.value })}
+                >
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="4">4</option>
+                </select>
+              </label>
+              <label>
+                任務間隔秒數
+                <input
+                  type="number"
+                  min="0"
+                  max="120"
+                  value={factory.queueDelaySeconds}
+                  onChange={(event) => setFactory({ ...factory, queueDelaySeconds: event.target.value })}
+                />
+              </label>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={factory.useReferenceAssets}
+                  onChange={(event) => setFactory({ ...factory, useReferenceAssets: event.target.checked })}
+                />
+                使用女仔/衣服/髮型/姿勢參考素材
+              </label>
+            </div>
+            <label>
+              批量額外 prompt
+              <textarea
+                value={factory.extraPrompt}
+                placeholder="例如：每張都要不同街拍構圖、不同光線、不同鏡頭距離"
+                onChange={(event) => setFactory({ ...factory, extraPrompt: event.target.value })}
+              />
+            </label>
+            <div className="card-actions">
+              <button type="button" onClick={() => enqueueFactoryBatch(false)} disabled={!assets.scene.length}>
+                建立批量列隊
+              </button>
+              <button type="button" onClick={() => enqueueFactoryBatch(true)} disabled={!assets.scene.length || queueRunning}>
+                建立並開始
+              </button>
+            </div>
+          </div>
           <button className="primary" onClick={generate} disabled={generating || !selectedScene}>
             {generating ? "生成中..." : `生成 ${form.count} 張圖片`}
           </button>
@@ -556,6 +751,25 @@ function queueStatusLabel(value: QueueJobStatus) {
   if (value === "running") return "生成中";
   if (value === "done") return "完成";
   return "失敗";
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
+function normalizeCount(value: number): 1 | 2 | 4 {
+  if (value >= 4) return 4;
+  if (value >= 2) return 2;
+  return 1;
+}
+
+function pickOptional<T>(items: T[], index: number) {
+  return items.length ? items[index % items.length] : undefined;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function Select(props: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
