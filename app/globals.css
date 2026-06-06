@@ -331,6 +331,22 @@ label {
   background: var(--panel-soft);
 }
 
+.manifest-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.manifest-tools input {
+  padding: 8px;
+  font-size: 12px;
+}
+
 .local-uploader input {
   padding: 8px;
   font-size: 12px;
@@ -505,6 +521,7 @@ pre {
   .asset-grid,
   .result-grid,
   .controls-grid,
+  .manifest-tools,
   .local-uploader {
     grid-template-columns: 1fr;
   }

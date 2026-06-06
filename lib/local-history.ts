@@ -41,6 +41,15 @@ export type LocalQueueJob = {
   results?: GeneratedImage[];
 };
 
+export type LocalManifest = {
+  version?: number;
+  exported_at?: string;
+  batches?: LocalBatch[];
+  assets?: LocalAsset[];
+  queue?: LocalQueueJob[];
+  images?: LocalGeneratedImage[];
+};
+
 function openDb() {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -187,6 +196,42 @@ export async function buildLocalManifest() {
   };
 }
 
+export async function importLocalManifest(manifest: LocalManifest) {
+  const assets = Array.isArray(manifest.assets) ? manifest.assets : [];
+  const images = Array.isArray(manifest.images) ? manifest.images : [];
+  const batches = Array.isArray(manifest.batches) ? manifest.batches : [];
+  const queue = Array.isArray(manifest.queue) ? manifest.queue : [];
+
+  if (!assets.length && !images.length && !batches.length && !queue.length) {
+    throw new Error("這個 JSON 沒有可匯入的素材、圖片、批次或列隊資料。");
+  }
+
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([IMAGE_STORE, BATCH_STORE, ASSET_STORE, QUEUE_STORE], "readwrite");
+    const imageStore = tx.objectStore(IMAGE_STORE);
+    const batchStore = tx.objectStore(BATCH_STORE);
+    const assetStore = tx.objectStore(ASSET_STORE);
+    const queueStore = tx.objectStore(QUEUE_STORE);
+
+    for (const asset of assets) assetStore.put(normalizeAsset(asset));
+    for (const image of images) imageStore.put(normalizeImage(image));
+    for (const batch of batches) batchStore.put(batch);
+    for (const job of queue) queueStore.put(normalizeQueueJob(job));
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("匯入素材包失敗。"));
+  });
+  db.close();
+
+  return {
+    assets: assets.length,
+    images: images.length,
+    batches: batches.length,
+    queue: queue.length
+  };
+}
+
 export async function saveLocalAsset(input: {
   file: File;
   category: AssetCategory;
@@ -253,6 +298,45 @@ export async function loadLocalQueue() {
   const jobs = await storeGetAll<LocalQueueJob>(tx.objectStore(QUEUE_STORE));
   db.close();
   return jobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+function normalizeAsset(asset: LocalAsset): LocalAsset {
+  const createdAt = asset.created_at || new Date().toISOString();
+  return {
+    ...asset,
+    id: asset.id || `imported-asset-${Date.now()}-${crypto.randomUUID()}`,
+    google_drive_file_id: asset.google_drive_file_id || "",
+    google_drive_url: asset.google_drive_url || null,
+    thumbnail_url: asset.thumbnail_url || asset.data_url || null,
+    data_url: asset.data_url || asset.thumbnail_url || "",
+    file_name: asset.file_name || "imported-asset.png",
+    mime_type: asset.mime_type || "image/png",
+    sub_category: asset.sub_category || "匯入素材",
+    tags: asset.tags || ["local"],
+    created_at: createdAt,
+    source: "local"
+  };
+}
+
+function normalizeImage(image: LocalGeneratedImage): LocalGeneratedImage {
+  return {
+    ...image,
+    id: image.id || `imported-image-${Date.now()}-${crypto.randomUUID()}`,
+    batch_id: image.batch_id || "imported",
+    local_status: image.local_status || "new",
+    source: "local",
+    created_at: image.created_at || new Date().toISOString()
+  };
+}
+
+function normalizeQueueJob(job: LocalQueueJob): LocalQueueJob {
+  return {
+    ...job,
+    id: job.id || `imported-job-${Date.now()}-${crypto.randomUUID()}`,
+    status: job.status === "running" ? "failed" : job.status || "pending",
+    message: job.status === "running" ? "匯入時任務未完成，請按重試。" : job.message || "等待生成",
+    createdAt: job.createdAt || new Date().toISOString()
+  };
 }
 
 function fileToDataUrl(file: File) {

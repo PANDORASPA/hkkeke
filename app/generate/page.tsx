@@ -16,6 +16,7 @@ import {
   buildLocalManifest,
   deleteLocalAsset,
   downloadJson,
+  importLocalManifest,
   loadLocalAssets,
   loadLocalQueue,
   LocalQueueJob,
@@ -385,6 +386,22 @@ export default function GeneratePage() {
     downloadJson(manifest, `ai-girl-generator_${new Date().toISOString().slice(0, 10)}.json`);
   }
 
+  async function importManifest(fileList: FileList | null) {
+    const file = fileList?.[0];
+    if (!file) return;
+    try {
+      setStatus("正在匯入素材包...");
+      const text = await file.text();
+      const manifest = JSON.parse(text);
+      const summary = await importLocalManifest(manifest);
+      await fetchAssets();
+      await restoreQueue();
+      setStatus(`匯入完成：素材 ${summary.assets}、圖片 ${summary.images}、批次 ${summary.batches}、列隊 ${summary.queue}。`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "匯入素材包失敗。");
+    }
+  }
+
   return (
     <main className="page">
       <div className="page-heading">
@@ -402,6 +419,7 @@ export default function GeneratePage() {
             {loadingAssets ? "同步中..." : "同步 Google Drive 素材"}
           </button>
           <p className="muted">{status}</p>
+          <ManifestTools onImport={importManifest} onExport={exportManifest} />
           <LocalAssetUploader onUpload={uploadLocalAsset} />
           <AssetGrid assets={assets.scene} selectedId={selectedScene} onSelect={selectScene} category="scene" onDelete={removeLocalAsset} />
         </section>
@@ -585,6 +603,18 @@ function LocalAssetUploader(props: { onUpload: (category: keyof AssetsByCategory
           <input type="file" accept="image/*" onChange={(event) => props.onUpload(category, event.target.files)} />
         </label>
       ))}
+    </div>
+  );
+}
+
+function ManifestTools(props: { onImport: (files: FileList | null) => void; onExport: () => void }) {
+  return (
+    <div className="manifest-tools">
+      <label>
+        匯入素材包 JSON
+        <input type="file" accept="application/json,.json" onChange={(event) => props.onImport(event.target.files)} />
+      </label>
+      <button type="button" onClick={props.onExport}>匯出素材包 JSON</button>
     </div>
   );
 }
