@@ -83,7 +83,8 @@ export default function GeneratePage() {
       setSelectedOutfitAsset(grouped.outfit[0]?.id || "");
       setSelectedHairAsset(grouped.hair[0]?.id || "");
       setSelectedPoseAsset(grouped.pose[0]?.id || "");
-      setStatus(`已同步 ${json.assets.length} 張素材。`);
+      const syncMessage = json.sync?.ok === false ? `（Supabase 同步提示：${json.sync.message}）` : "";
+      setStatus(`已同步 ${json.assets.length} 張素材。${syncMessage}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "讀取素材失敗。");
     } finally {

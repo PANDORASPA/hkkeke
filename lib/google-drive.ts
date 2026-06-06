@@ -117,6 +117,7 @@ export async function listDriveAssets() {
 
 function toAsset(file: DriveFile, category: AssetCategory, subCategory: string | null): DriveAsset {
   return {
+    id: file.id,
     google_drive_file_id: file.id,
     google_drive_url: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`,
     thumbnail_url: file.thumbnailLink || null,

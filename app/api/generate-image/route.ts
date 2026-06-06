@@ -29,29 +29,22 @@ export async function POST(request: NextRequest) {
     validatePayload(payload);
 
     const supabase = getSupabaseAdmin();
-    const { data: sceneAsset, error: sceneError } = await supabase
-      .from("drive_assets")
-      .select("*")
-      .eq("id", payload.sceneAssetId)
-      .single();
-    if (sceneError) throw new Error(formatAppSettingsError(sceneError));
+    const sceneAsset = await resolveAsset(supabase, payload.sceneAssetId, "scene");
     if (!sceneAsset) throw new Error("找不到已選場景素材，請重新同步 Google Drive 素材。");
 
-    const optionalAssetIds = [
-      payload.girlReferenceAssetId,
-      payload.outfitAssetId,
-      payload.hairAssetId,
-      payload.poseAssetId
-    ].filter(Boolean) as string[];
-    const optionalAssets = optionalAssetIds.length
-      ? await supabase.from("drive_assets").select("*").in("id", optionalAssetIds)
-      : { data: [], error: null };
-    if (optionalAssets.error) throw new Error(formatAppSettingsError(optionalAssets.error));
+    const optionalAssets = (
+      await Promise.all([
+        payload.girlReferenceAssetId ? resolveAsset(supabase, payload.girlReferenceAssetId, "girl") : null,
+        payload.outfitAssetId ? resolveAsset(supabase, payload.outfitAssetId, "outfit") : null,
+        payload.hairAssetId ? resolveAsset(supabase, payload.hairAssetId, "hair") : null,
+        payload.poseAssetId ? resolveAsset(supabase, payload.poseAssetId, "pose") : null
+      ])
+    ).filter(Boolean) as DriveAsset[];
 
-    const references = [sceneAsset, ...((optionalAssets.data || []) as DriveAsset[])];
+    const references = [sceneAsset, ...optionalAssets];
     const prompt = buildPrompt(payload, {
       scene: sceneAsset,
-      extras: (optionalAssets.data || []) as DriveAsset[]
+      extras: optionalAssets
     });
     const negativePrompt = getNegativePrompt();
     const results = [];
@@ -87,8 +80,15 @@ export async function POST(request: NextRequest) {
       };
 
       const { data, error } = await supabase.from("generated_images").insert(record).select("*").single();
-      if (error) throw new Error(formatAppSettingsError(error));
-      results.push(data);
+      if (error) {
+        results.push({
+          id: uploaded.google_drive_file_id,
+          ...record,
+          created_at: new Date().toISOString()
+        });
+      } else {
+        results.push(data);
+      }
     }
 
     return NextResponse.json({ images: results });
@@ -98,6 +98,36 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+async function resolveAsset(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  assetId: string,
+  category: DriveAsset["category"]
+) {
+  try {
+    const { data, error } = await supabase
+      .from("drive_assets")
+      .select("*")
+      .or(`id.eq.${assetId},google_drive_file_id.eq.${assetId}`)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) return data as DriveAsset;
+  } catch {
+    // Supabase may be paused; fall back to using the Google Drive file id from the client.
+  }
+
+  return {
+    id: assetId,
+    google_drive_file_id: assetId,
+    google_drive_url: `https://drive.google.com/file/d/${assetId}/view`,
+    thumbnail_url: null,
+    file_name: `${category}-${assetId}.png`,
+    mime_type: "image/png",
+    category,
+    sub_category: null,
+    tags: [String(category)]
+  } satisfies DriveAsset;
 }
 
 function validatePayload(payload: GeneratePayload) {

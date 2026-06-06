@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadGeneratedImage } from "@/lib/google-drive";
 
+export const runtime = "nodejs";
+export const preferredRegion = "iad1";
+
 export async function POST(request: NextRequest) {
   try {
     const form = await request.formData();
@@ -15,6 +18,9 @@ export async function POST(request: NextRequest) {
     const uploaded = await uploadGeneratedImage(buffer, fileName);
     return NextResponse.json(uploaded);
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "上傳成品到 Google Drive 失敗。" },
+      { status: 500 }
+    );
   }
 }

@@ -2,22 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { downloadDriveFile } from "@/lib/google-drive";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
+export const runtime = "nodejs";
+export const preferredRegion = "iad1";
+
 export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("generated_images")
-      .select("google_drive_file_id, girl_style, outfit, created_at")
-      .eq("id", id)
-      .single();
+    const record = await findGeneratedRecord(id);
+    const googleDriveFileId = record?.google_drive_file_id || id;
 
-    if (error) throw error;
-    if (!data?.google_drive_file_id) throw new Error("找不到 Google Drive 檔案。");
-
-    const buffer = await downloadDriveFile(data.google_drive_file_id);
-    const created = data.created_at ? new Date(data.created_at).toISOString().slice(0, 10) : "generated";
-    const fileName = `${created}_${data.girl_style || "girl"}_${data.outfit || "image"}.png`.replace(/[^a-z0-9_.-]+/gi, "_");
+    const buffer = await downloadDriveFile(googleDriveFileId);
+    const created = record?.created_at ? new Date(record.created_at).toISOString().slice(0, 10) : "generated";
+    const fileName = `${created}_${record?.girl_style || "girl"}_${record?.outfit || "image"}.png`.replace(
+      /[^a-z0-9_.-]+/gi,
+      "_"
+    );
 
     return new NextResponse(buffer, {
       headers: {
@@ -26,6 +25,24 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
       }
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "下載失敗。" }, { status: 404 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "下載失敗。" },
+      { status: 404 }
+    );
+  }
+}
+
+async function findGeneratedRecord(id: string) {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("generated_images")
+      .select("google_drive_file_id, girl_style, outfit, created_at")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) return null;
+    return data;
+  } catch {
+    return null;
   }
 }
