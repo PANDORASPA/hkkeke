@@ -46,6 +46,23 @@ type SceneVariation = {
 type QueueJob = LocalQueueJob;
 type QueueJobStatus = LocalQueueJob["status"];
 
+type FactorySettings = {
+  targetImages: string;
+  imagesPerJob: string;
+  queueDelaySeconds: string;
+  useReferenceAssets: boolean;
+  extraPrompt: string;
+};
+
+type FactoryRecipe = {
+  id: string;
+  name: string;
+  createdAt: string;
+  settings: FactorySettings;
+};
+
+const FACTORY_RECIPES_KEY = "ai-girl-generator.factory-recipes";
+
 const emptyAssets: AssetsByCategory = {
   scene: [],
   girl: [],
@@ -82,13 +99,15 @@ export default function GeneratePage() {
     count: "1",
     extraPrompt: ""
   });
-  const [factory, setFactory] = useState({
+  const [factory, setFactory] = useState<FactorySettings>({
     targetImages: "100",
     imagesPerJob: "4",
     queueDelaySeconds: "8",
     useReferenceAssets: true,
     extraPrompt: ""
   });
+  const [factoryRecipeName, setFactoryRecipeName] = useState("每日 100 張");
+  const [factoryRecipes, setFactoryRecipes] = useState<FactoryRecipe[]>([]);
   const [generating, setGenerating] = useState(false);
   const [generatingScene, setGeneratingScene] = useState(false);
   const [sceneVariation, setSceneVariation] = useState<SceneVariation | null>(null);
@@ -104,6 +123,7 @@ export default function GeneratePage() {
   useEffect(() => {
     fetchAssets();
     restoreQueue();
+    loadFactoryRecipes();
   }, []);
 
   async function restoreQueue() {
@@ -125,6 +145,48 @@ export default function GeneratePage() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "讀取列隊失敗。");
     }
+  }
+
+  function loadFactoryRecipes() {
+    try {
+      const raw = window.localStorage.getItem(FACTORY_RECIPES_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) setFactoryRecipes(parsed);
+    } catch {
+      setFactoryRecipes([]);
+    }
+  }
+
+  function persistFactoryRecipes(next: FactoryRecipe[]) {
+    setFactoryRecipes(next);
+    window.localStorage.setItem(FACTORY_RECIPES_KEY, JSON.stringify(next));
+  }
+
+  function saveFactoryRecipe() {
+    const name = factoryRecipeName.trim() || `生產配方 ${factoryRecipes.length + 1}`;
+    const recipe: FactoryRecipe = {
+      id: crypto.randomUUID(),
+      name,
+      createdAt: new Date().toISOString(),
+      settings: { ...factory }
+    };
+    persistFactoryRecipes([recipe, ...factoryRecipes.filter((item) => item.name !== name)]);
+    setFactoryRecipeName(name);
+    setStatus(`已保存批量生產配方：${name}`);
+  }
+
+  function loadFactoryRecipe(id: string) {
+    const recipe = factoryRecipes.find((item) => item.id === id);
+    if (!recipe) return;
+    setFactory(recipe.settings);
+    setFactoryRecipeName(recipe.name);
+    setStatus(`已套用批量生產配方：${recipe.name}`);
+  }
+
+  function deleteFactoryRecipe(id: string) {
+    const recipe = factoryRecipes.find((item) => item.id === id);
+    persistFactoryRecipes(factoryRecipes.filter((item) => item.id !== id));
+    setStatus(recipe ? `已刪除批量生產配方：${recipe.name}` : "已刪除批量生產配方。");
   }
 
   async function fetchAssets() {
@@ -641,6 +703,33 @@ export default function GeneratePage() {
             <div>
               <strong>批量生產工廠</strong>
               <p className="muted">用現有場景和設定自動組合大量任務；適合一天 100 張以上的生產流。</p>
+            </div>
+            <div className="recipe-tools">
+              <label>
+                生產配方名稱
+                <input
+                  value={factoryRecipeName}
+                  placeholder="例如：每日 100 張街拍"
+                  onChange={(event) => setFactoryRecipeName(event.target.value)}
+                />
+              </label>
+              <button type="button" onClick={saveFactoryRecipe}>保存配方</button>
+              <label>
+                套用已保存配方
+                <select value="" onChange={(event) => loadFactoryRecipe(event.target.value)}>
+                  <option value="">選擇配方</option>
+                  {factoryRecipes.map((recipe) => (
+                    <option value={recipe.id} key={recipe.id}>{recipe.name}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => deleteFactoryRecipe(factoryRecipes.find((recipe) => recipe.name === factoryRecipeName)?.id || "")}
+                disabled={!factoryRecipes.some((recipe) => recipe.name === factoryRecipeName)}
+              >
+                刪除目前配方
+              </button>
             </div>
             <div className="controls-grid">
               <label>

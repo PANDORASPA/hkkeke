@@ -296,6 +296,17 @@ label {
   min-height: 84px;
 }
 
+.recipe-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
 .check-row {
   display: flex;
   align-items: center;
@@ -560,6 +571,7 @@ pre {
   .result-grid,
   .controls-grid,
   .manifest-tools,
+  .recipe-tools,
   .local-uploader {
     grid-template-columns: 1fr;
   }
