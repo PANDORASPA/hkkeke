@@ -148,6 +148,27 @@ export async function updateLocalImageStatus(id: string, status: LocalGeneratedI
   db.close();
 }
 
+export async function deleteLocalImage(id: string) {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([IMAGE_STORE, BATCH_STORE], "readwrite");
+    tx.objectStore(IMAGE_STORE).delete(id);
+    const batchStore = tx.objectStore(BATCH_STORE);
+    const batchRequest = batchStore.getAll();
+    batchRequest.onsuccess = () => {
+      const batches = batchRequest.result as LocalBatch[];
+      for (const batch of batches) {
+        if (batch.image_ids.includes(id)) {
+          batchStore.put({ ...batch, image_ids: batch.image_ids.filter((imageId) => imageId !== id) });
+        }
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("刪除本地圖片失敗。"));
+  });
+  db.close();
+}
+
 export async function buildLocalManifest() {
   const db = await openDb();
   const tx = db.transaction([IMAGE_STORE, BATCH_STORE, ASSET_STORE, QUEUE_STORE], "readonly");
