@@ -38,6 +38,11 @@ export type LocalQueueJob = {
   status: "pending" | "running" | "done" | "failed";
   message: string;
   createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  attempts?: number;
+  maxAttempts?: number;
+  lastError?: string;
   results?: GeneratedImage[];
 };
 
@@ -361,12 +366,17 @@ function normalizeImage(image: LocalGeneratedImage): LocalGeneratedImage {
 }
 
 function normalizeQueueJob(job: LocalQueueJob): LocalQueueJob {
+  const attempts = Number.isFinite(job.attempts) ? Number(job.attempts) : 0;
+  const maxAttempts = Number.isFinite(job.maxAttempts) ? Number(job.maxAttempts) : 3;
   return {
     ...job,
     id: job.id || `imported-job-${Date.now()}-${crypto.randomUUID()}`,
     status: job.status === "running" ? "failed" : job.status || "pending",
     message: job.status === "running" ? "匯入時任務未完成，請按重試。" : job.message || "等待生成",
-    createdAt: job.createdAt || new Date().toISOString()
+    createdAt: job.createdAt || new Date().toISOString(),
+    attempts,
+    maxAttempts: Math.max(1, maxAttempts),
+    lastError: job.lastError || ""
   };
 }
 

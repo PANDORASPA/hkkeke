@@ -50,6 +50,7 @@ type FactorySettings = {
   targetImages: string;
   imagesPerJob: string;
   queueDelaySeconds: string;
+  maxRetries: string;
   useReferenceAssets: boolean;
   randomizeCombinations: boolean;
   seed: string;
@@ -105,6 +106,7 @@ export default function GeneratePage() {
     targetImages: "100",
     imagesPerJob: "4",
     queueDelaySeconds: "8",
+    maxRetries: "2",
     useReferenceAssets: true,
     randomizeCombinations: true,
     seed: todaySeed(),
@@ -135,8 +137,8 @@ export default function GeneratePage() {
       const storedQueue = await loadLocalQueue();
       const normalizedQueue = storedQueue.map((job) => (
         job.status === "running"
-          ? { ...job, status: "failed" as const, message: "頁面曾經重新載入，請按重試繼續。" }
-          : job
+          ? normalizeQueueJob({ ...job, status: "failed" as const, message: "頁面曾經重新載入，請按重試繼續。" })
+          : normalizeQueueJob(job)
       ));
       queueRef.current = normalizedQueue;
       setQueue(normalizedQueue);
@@ -288,11 +290,16 @@ export default function GeneratePage() {
     const runningJobs = queue.filter((job) => job.status === "running").length;
     const doneJobs = queue.filter((job) => job.status === "done").length;
     const failedJobs = queue.filter((job) => job.status === "failed").length;
+    const retriedJobs = queue.filter((job) => (job.attempts || 0) > 1).length;
+    const retryBudget = queue
+      .filter((job) => job.status !== "done")
+      .reduce((sum, job) => sum + Math.max(0, (job.maxAttempts || 1) - (job.attempts || 0)), 0);
     const plannedImages = queue.reduce((sum, job) => sum + job.payload.count, 0);
     const doneImages = queue
       .filter((job) => job.status === "done")
       .reduce((sum, job) => sum + (job.results?.length || job.payload.count), 0);
-    return { totalJobs, pendingJobs, runningJobs, doneJobs, failedJobs, plannedImages, doneImages };
+    const successRate = totalJobs ? Math.round((doneJobs / totalJobs) * 100) : 0;
+    return { totalJobs, pendingJobs, runningJobs, doneJobs, failedJobs, retriedJobs, retryBudget, plannedImages, doneImages, successRate };
   }, [queue]);
 
   function buildPayloadFromAssets(input: {
@@ -342,6 +349,7 @@ export default function GeneratePage() {
   }
 
   function makeQueueJob(input: { label: string; payload: GeneratePayload; assets: DriveAsset[]; message?: string }): QueueJob {
+    const maxAttempts = 1 + clampNumber(Number(factory.maxRetries), 0, 5);
     return {
       id: crypto.randomUUID(),
       label: input.label,
@@ -349,7 +357,10 @@ export default function GeneratePage() {
       assets: input.assets,
       status: "pending",
       message: input.message || "等待生成",
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      attempts: 0,
+      maxAttempts,
+      lastError: ""
     };
   }
 
@@ -504,13 +515,29 @@ export default function GeneratePage() {
         }
         const job = queueRef.current.find((item) => item.status === "pending");
         if (!job) break;
-        updateQueue((current) => current.map((item) => item.id === job.id ? { ...item, status: "running", message: "生成中..." } : item));
+        const attemptNumber = (job.attempts || 0) + 1;
+        const maxAttempts = Math.max(1, job.maxAttempts || 3);
+        updateQueue((current) => current.map((item) => item.id === job.id ? {
+          ...item,
+          status: "running",
+          attempts: attemptNumber,
+          maxAttempts,
+          startedAt: new Date().toISOString(),
+          message: `生成中，第 ${attemptNumber}/${maxAttempts} 次嘗試...`
+        } : item));
         try {
           const generated = await runGenerationPayload(job.payload, job.assets);
           setResults(generated.images);
           updateQueue((current) => current.map((item) => (
             item.id === job.id
-              ? { ...item, status: "done", message: `完成 ${generated.images.length} 張。${generated.warning}`.trim(), results: generated.images }
+              ? {
+                ...item,
+                status: "done",
+                message: `完成 ${generated.images.length} 張。${generated.warning}`.trim(),
+                finishedAt: new Date().toISOString(),
+                lastError: "",
+                results: generated.images
+              }
               : item
           )));
           if (queueRef.current.some((item) => item.status === "pending")) {
@@ -522,10 +549,28 @@ export default function GeneratePage() {
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : "生成失敗。";
-          updateQueue((current) => current.map((item) => item.id === job.id ? { ...item, status: "failed", message } : item));
+          const shouldRetry = attemptNumber < maxAttempts;
+          updateQueue((current) => current.map((item) => item.id === job.id ? {
+            ...item,
+            status: shouldRetry ? "pending" : "failed",
+            message: shouldRetry
+              ? `失敗，會自動重試第 ${attemptNumber + 1}/${maxAttempts} 次：${message}`
+              : `已達重試上限：${message}`,
+            finishedAt: shouldRetry ? undefined : new Date().toISOString(),
+            lastError: message
+          } : item));
+          if (shouldRetry) {
+            const seconds = clampNumber(Number(factory.queueDelaySeconds), 0, 120);
+            if (seconds > 0) {
+              setStatus(`任務失敗，等待 ${seconds} 秒後自動重試。`);
+              await delay(seconds * 1000);
+            }
+          }
         }
       }
-      setStatus("列隊已處理完成。失敗任務可以單個重試。");
+      const failed = queueRef.current.filter((item) => item.status === "failed").length;
+      const done = queueRef.current.filter((item) => item.status === "done").length;
+      setStatus(`列隊已處理完成：完成 ${done} 個任務，失敗 ${failed} 個任務。可匯出生產報告留底。`);
     } finally {
       queueRunningRef.current = false;
       setQueueRunning(false);
@@ -545,13 +590,57 @@ export default function GeneratePage() {
   }
 
   function retryQueueJob(id: string) {
-    updateQueue((current) => current.map((item) => item.id === id ? { ...item, status: "pending", message: "等待重試" } : item));
+    updateQueue((current) => current.map((item) => item.id === id ? {
+      ...item,
+      status: "pending",
+      attempts: 0,
+      maxAttempts: Math.max(1, item.maxAttempts || 1 + clampNumber(Number(factory.maxRetries), 0, 5)),
+      message: "等待手動重試",
+      lastError: item.lastError || ""
+    } : item));
     void processQueue();
   }
 
   function retryAllFailedJobs() {
-    updateQueue((current) => current.map((item) => item.status === "failed" ? { ...item, status: "pending", message: "等待批量重試" } : item));
+    updateQueue((current) => current.map((item) => item.status === "failed" ? {
+      ...item,
+      status: "pending",
+      attempts: 0,
+      maxAttempts: Math.max(1, item.maxAttempts || 1 + clampNumber(Number(factory.maxRetries), 0, 5)),
+      message: "等待批量重試"
+    } : item));
     setStatus("已把所有失敗任務放回等待中。");
+  }
+
+  function exportQueueReport() {
+    const report = {
+      version: 1,
+      exported_at: new Date().toISOString(),
+      summary: queueStats,
+      settings: {
+        queueDelaySeconds: factory.queueDelaySeconds,
+        maxRetries: factory.maxRetries,
+        seed: factory.seed,
+        targetImages: factory.targetImages,
+        imagesPerJob: factory.imagesPerJob
+      },
+      jobs: queue.map((job) => ({
+        id: job.id,
+        label: job.label,
+        status: job.status,
+        message: job.message,
+        attempts: job.attempts || 0,
+        maxAttempts: job.maxAttempts || 1,
+        plannedImages: job.payload.count,
+        generatedImages: job.results?.length || 0,
+        lastError: job.lastError || "",
+        createdAt: job.createdAt,
+        startedAt: job.startedAt || "",
+        finishedAt: job.finishedAt || "",
+        payload: job.payload
+      }))
+    };
+    downloadJson(report, `production-report_${new Date().toISOString().slice(0, 10)}.json`);
   }
 
   function clearFinishedQueueJobs() {
@@ -784,6 +873,16 @@ export default function GeneratePage() {
                   onChange={(event) => setFactory({ ...factory, queueDelaySeconds: event.target.value })}
                 />
               </label>
+              <label>
+                自動重試次數
+                <input
+                  type="number"
+                  min="0"
+                  max="5"
+                  value={factory.maxRetries}
+                  onChange={(event) => setFactory({ ...factory, maxRetries: event.target.value })}
+                />
+              </label>
               <label className="check-row">
                 <input
                   type="checkbox"
@@ -845,6 +944,9 @@ export default function GeneratePage() {
               <span>完成：{queueStats.doneJobs}</span>
               <span>失敗：{queueStats.failedJobs}</span>
               <span>圖片：{queueStats.doneImages}/{queueStats.plannedImages}</span>
+              <span>重試任務：{queueStats.retriedJobs}</span>
+              <span>剩餘重試：{queueStats.retryBudget}</span>
+              <span>成功率：{queueStats.successRate}%</span>
             </div>
             <div className="card-actions">
               <button type="button" onClick={enqueueCurrent} disabled={!selectedScene}>加入列隊</button>
@@ -856,6 +958,7 @@ export default function GeneratePage() {
               <button type="button" onClick={retryAllFailedJobs} disabled={!queue.some((job) => job.status === "failed")}>重試全部失敗</button>
               <button type="button" onClick={clearFinishedQueueJobs} disabled={!queue.some((job) => job.status === "done")}>清走完成</button>
               <button type="button" onClick={clearQueue} disabled={!queue.some((job) => job.status !== "running")}>清空列隊</button>
+              <button type="button" onClick={exportQueueReport} disabled={!queue.length}>匯出生產報告</button>
             </div>
             {queue.length ? (
               <div className="queue-list">
@@ -864,6 +967,8 @@ export default function GeneratePage() {
                     <div>
                       <strong>{job.label}</strong>
                       <span>{queueStatusLabel(job.status)} / {job.message}</span>
+                      <span>嘗試：{job.attempts || 0}/{job.maxAttempts || 1} / 建立：{new Date(job.createdAt).toLocaleString("zh-HK")}</span>
+                      {job.lastError ? <span className="error-text">最後錯誤：{job.lastError}</span> : null}
                     </div>
                     <div className="queue-actions">
                       {job.status === "failed" ? <button type="button" onClick={() => retryQueueJob(job.id)}>重試</button> : null}
@@ -952,10 +1057,22 @@ function normalizeFactorySettings(settings: Partial<FactorySettings> = {}): Fact
     targetImages: settings.targetImages || "100",
     imagesPerJob: settings.imagesPerJob || "4",
     queueDelaySeconds: settings.queueDelaySeconds || "8",
+    maxRetries: settings.maxRetries || "2",
     useReferenceAssets: settings.useReferenceAssets ?? true,
     randomizeCombinations: settings.randomizeCombinations ?? true,
     seed: settings.seed || todaySeed(),
     extraPrompt: settings.extraPrompt || ""
+  };
+}
+
+function normalizeQueueJob(job: QueueJob): QueueJob {
+  const attempts = Number.isFinite(job.attempts) ? Number(job.attempts) : 0;
+  const maxAttempts = Number.isFinite(job.maxAttempts) ? Number(job.maxAttempts) : 3;
+  return {
+    ...job,
+    attempts,
+    maxAttempts: Math.max(1, maxAttempts),
+    lastError: job.lastError || ""
   };
 }
 
