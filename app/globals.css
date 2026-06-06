@@ -256,6 +256,11 @@ label {
   gap: 8px;
 }
 
+.scene-variation {
+  display: grid;
+  gap: 10px;
+}
+
 .card-actions {
   display: flex !important;
   grid-template-columns: none !important;
@@ -273,6 +278,41 @@ label {
   font-size: 12px;
   font-weight: 800;
   text-decoration: none;
+}
+
+.card-actions button {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 9px;
+  background: #fff;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.toolbar,
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.filter-row {
+  margin: 0 0 14px;
+}
+
+.filter-row button,
+.toolbar button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.filter-row button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
 }
 
 .clamp {

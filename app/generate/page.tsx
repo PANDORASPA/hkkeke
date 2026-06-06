@@ -12,6 +12,7 @@ import {
   POSES
 } from "@/lib/options";
 import { buildPrompt } from "@/lib/prompt";
+import { buildLocalManifest, downloadJson, saveGeneratedBatch, updateLocalImageStatus } from "@/lib/local-history";
 import { DriveAsset, GeneratedImage, GeneratePayload } from "@/lib/types";
 
 type AssetsByCategory = {
@@ -20,6 +21,14 @@ type AssetsByCategory = {
   outfit: DriveAsset[];
   hair: DriveAsset[];
   pose: DriveAsset[];
+};
+
+type SceneVariation = {
+  id: string;
+  data_url: string;
+  file_name: string;
+  prompt: string;
+  created_at: string;
 };
 
 const emptyAssets: AssetsByCategory = {
@@ -59,6 +68,8 @@ export default function GeneratePage() {
     extraPrompt: ""
   });
   const [generating, setGenerating] = useState(false);
+  const [generatingScene, setGeneratingScene] = useState(false);
+  const [sceneVariation, setSceneVariation] = useState<SceneVariation | null>(null);
   const [results, setResults] = useState<GeneratedImage[]>([]);
 
   useEffect(() => {
@@ -92,8 +103,15 @@ export default function GeneratePage() {
     }
   }
 
+  function selectScene(id: string) {
+    setSelectedScene(id);
+    setSceneVariation(null);
+  }
+
   const payload: GeneratePayload = useMemo(() => ({
     sceneAssetId: selectedScene,
+    sceneDataUrl: sceneVariation?.data_url,
+    sceneFileName: sceneVariation?.file_name,
     girlReferenceAssetId: selectedGirl || undefined,
     outfitAssetId: selectedOutfitAsset || undefined,
     hairAssetId: selectedHairAsset || undefined,
@@ -107,7 +125,7 @@ export default function GeneratePage() {
     pose: form.pose,
     extraPrompt: form.extraPrompt,
     count: Number(form.count) as 1 | 2 | 4
-  }), [form, selectedGirl, selectedHairAsset, selectedOutfitAsset, selectedPoseAsset, selectedScene]);
+  }), [form, sceneVariation, selectedGirl, selectedHairAsset, selectedOutfitAsset, selectedPoseAsset, selectedScene]);
 
   const promptPreview = useMemo(() => buildPrompt(payload), [payload]);
 
@@ -139,14 +157,55 @@ export default function GeneratePage() {
       });
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "生成失敗。");
-      setResults(json.images);
+      const savedImages = await saveGeneratedBatch({ images: json.images, payload, assets: selectedAssets });
+      setResults(savedImages);
       const warning = json.warnings?.length ? ` 提示：${json.warnings.join(" ")}` : "";
-      setStatus(`完成生成 ${json.images.length} 張圖片。${warning}`);
+      setStatus(`完成生成 ${savedImages.length} 張圖片，已保存到本地歷史。${warning}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "生成失敗。");
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function generateSimilarScene() {
+    const scene = assets.scene.find((asset) => asset.id === selectedScene);
+    if (!scene?.id) {
+      setStatus("請先選擇一張場景圖。");
+      return;
+    }
+
+    setGeneratingScene(true);
+    setStatus("正在生成相似場景...");
+    try {
+      const response = await fetch("/api/generate-scene", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sceneAssetId: scene.google_drive_file_id,
+          sceneName: assetName(scene),
+          extraPrompt: form.extraPrompt
+        })
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "生成相似場景失敗。");
+      setSceneVariation(json.image);
+      setStatus("已生成相似場景；下一次生成圖片會自動使用這張新場景作背景。");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "生成相似場景失敗。");
+    } finally {
+      setGeneratingScene(false);
+    }
+  }
+
+  async function markResult(id: string, status: "selected" | "rejected") {
+    await updateLocalImageStatus(id, status);
+    setResults((current) => current.map((image) => image.id === id ? { ...image, local_status: status } : image));
+  }
+
+  async function exportManifest() {
+    const manifest = await buildLocalManifest();
+    downloadJson(manifest, `ai-girl-generator_${new Date().toISOString().slice(0, 10)}.json`);
   }
 
   return (
@@ -166,7 +225,7 @@ export default function GeneratePage() {
             {loadingAssets ? "同步中..." : "同步 Google Drive 素材"}
           </button>
           <p className="muted">{status}</p>
-          <AssetGrid assets={assets.scene} selectedId={selectedScene} onSelect={setSelectedScene} category="scene" />
+          <AssetGrid assets={assets.scene} selectedId={selectedScene} onSelect={selectScene} category="scene" />
         </section>
 
         <section className="panel">
@@ -194,6 +253,24 @@ export default function GeneratePage() {
         <section className="panel">
           <h2>已選素材</h2>
           <AssetGrid assets={selectedAssets} selectedId="" onSelect={() => undefined} />
+          <div className="scene-variation">
+            <button onClick={generateSimilarScene} disabled={generatingScene || !selectedScene}>
+              {generatingScene ? "生成相似場景中..." : "按目前場景生成相似場景"}
+            </button>
+            {sceneVariation ? (
+              <article className="asset-card selected">
+                <img src={sceneVariation.data_url} alt="相似場景" />
+                <div>
+                  <strong>臨時相似場景</strong>
+                  <span>主生成會使用這張場景；如想長期保存，請下載後放回 Drive 場景庫。</span>
+                  <div className="card-actions">
+                    <a href={sceneVariation.data_url} download={sceneVariation.file_name}>下載場景</a>
+                    <button type="button" onClick={() => setSceneVariation(null)}>改回原場景</button>
+                  </div>
+                </div>
+              </article>
+            ) : null}
+          </div>
           <button className="primary" onClick={generate} disabled={generating || !selectedScene}>
             {generating ? "生成中..." : `生成 ${form.count} 張圖片`}
           </button>
@@ -202,6 +279,7 @@ export default function GeneratePage() {
             <pre>{promptPreview}</pre>
           </div>
           <h2>生成結果</h2>
+          {results.length ? <button onClick={exportManifest}>匯出本地素材包 JSON</button> : null}
           <div className="result-grid">
             {results.map((image) => (
               <article className="image-card" key={image.id}>
@@ -212,9 +290,12 @@ export default function GeneratePage() {
                 )}
                 <div>
                   <strong>{label(image.girl_style)} / {label(image.outfit)}</strong>
+                  {image.local_status ? <span>狀態：{statusLabel(image.local_status)}</span> : null}
                   {image.upload_warning ? <span className="error-text">{image.upload_warning}</span> : null}
                   <span>{image.prompt}</span>
                   <div className="card-actions">
+                    <button type="button" onClick={() => markResult(image.id, "selected")}>保留</button>
+                    <button type="button" onClick={() => markResult(image.id, "rejected")}>唔要</button>
                     {image.google_drive_url ? <a href={image.google_drive_url} target="_blank">Google Drive</a> : null}
                     {image.data_url ? (
                       <a href={image.data_url} download={image.file_name || "generated.png"}>下載</a>
@@ -234,6 +315,12 @@ export default function GeneratePage() {
 
 function label(value?: string | null) {
   return value ? OPTION_LABELS[value] || value : "未設定";
+}
+
+function statusLabel(value: string) {
+  if (value === "selected") return "已保留";
+  if (value === "rejected") return "唔要";
+  return "新生成";
 }
 
 function Select(props: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {

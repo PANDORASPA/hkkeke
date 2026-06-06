@@ -36,10 +36,15 @@ export type GeneratedImage = {
   body_type: string | null;
   pose: string | null;
   created_at: string;
+  batch_id?: string | null;
+  local_status?: "new" | "selected" | "rejected";
+  source?: "supabase" | "local";
 };
 
 export type GeneratePayload = {
   sceneAssetId: string;
+  sceneDataUrl?: string;
+  sceneFileName?: string;
   girlReferenceAssetId?: string;
   outfitAssetId?: string;
   hairAssetId?: string;

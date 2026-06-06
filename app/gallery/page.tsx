@@ -1,40 +1,102 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { buildLocalManifest, downloadJson, loadLocalImages, updateLocalImageStatus } from "@/lib/local-history";
 import { OPTION_LABELS } from "@/lib/options";
 import { GeneratedImage } from "@/lib/types";
 
 export default function GalleryPage() {
-  const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [remoteImages, setRemoteImages] = useState<GeneratedImage[]>([]);
+  const [localImages, setLocalImages] = useState<GeneratedImage[]>([]);
   const [status, setStatus] = useState("正在讀取圖庫...");
+  const [filter, setFilter] = useState<"all" | "selected" | "rejected" | "new">("all");
 
   useEffect(() => {
-    fetch("/api/generated")
-      .then((response) => response.json().then((json) => ({ ok: response.ok, json })))
-      .then(({ ok, json }) => {
-        if (!ok) throw new Error(json.error || "讀取圖庫失敗。");
-        setImages(json.images || []);
-        setStatus(`共有 ${json.images?.length || 0} 張生成紀錄。`);
-      })
-      .catch((error) => setStatus(error instanceof Error ? error.message : "讀取圖庫失敗。"));
+    refreshGallery();
   }, []);
+
+  async function refreshGallery() {
+    const messages: string[] = [];
+
+    try {
+      const local = await loadLocalImages();
+      setLocalImages(local);
+      messages.push(`本地歷史 ${local.length} 張`);
+    } catch (error) {
+      messages.push(error instanceof Error ? error.message : "本地歷史讀取失敗");
+    }
+
+    try {
+      const response = await fetch("/api/generated");
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "Supabase 圖庫讀取失敗。");
+      setRemoteImages((json.images || []).map((image: GeneratedImage) => ({ ...image, source: "supabase" })));
+      messages.push(`Supabase ${json.images?.length || 0} 張`);
+    } catch (error) {
+      messages.push(error instanceof Error ? `Supabase：${error.message}` : "Supabase 圖庫讀取失敗");
+    }
+
+    setStatus(messages.join(" / "));
+  }
+
+  async function markImage(id: string, nextStatus: "selected" | "rejected" | "new") {
+    await updateLocalImageStatus(id, nextStatus);
+    setLocalImages((current) =>
+      current.map((image) => image.id === id ? { ...image, local_status: nextStatus } : image)
+    );
+  }
+
+  async function exportManifest() {
+    const manifest = await buildLocalManifest();
+    downloadJson(manifest, `ai-girl-generator_${new Date().toISOString().slice(0, 10)}.json`);
+  }
+
+  const images = useMemo(() => {
+    const localIds = new Set(localImages.map((image) => image.id));
+    const merged = [
+      ...localImages,
+      ...remoteImages.filter((image) => !localIds.has(image.id))
+    ];
+    return merged
+      .filter((image) => filter === "all" || (image.local_status || "new") === filter)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [filter, localImages, remoteImages]);
 
   return (
     <main className="page">
       <div className="page-heading">
         <div>
           <h1>圖庫</h1>
-          <p className="muted">這裡讀取 Supabase generated_images 紀錄；圖片檔案本身存放在 Google Drive。</p>
+          <p className="muted">這裡會合併 Supabase 紀錄和本瀏覽器本地歷史；即使 Supabase paused，剛生成的圖仍然會保留在本機。</p>
         </div>
-        <a className="secondary-link" href="/generate">返回生成</a>
+        <div className="toolbar">
+          <button onClick={refreshGallery}>重新整理</button>
+          <button onClick={exportManifest}>匯出素材包 JSON</button>
+          <a className="secondary-link" href="/generate">返回生成</a>
+        </div>
       </div>
+
       <p className="status">{status}</p>
+
+      <div className="filter-row">
+        <button className={filter === "all" ? "primary" : ""} onClick={() => setFilter("all")}>全部</button>
+        <button className={filter === "new" ? "primary" : ""} onClick={() => setFilter("new")}>新生成</button>
+        <button className={filter === "selected" ? "primary" : ""} onClick={() => setFilter("selected")}>保留</button>
+        <button className={filter === "rejected" ? "primary" : ""} onClick={() => setFilter("rejected")}>唔要</button>
+      </div>
+
       <section className="gallery-grid">
         {images.map((image) => (
           <article className="image-card" key={image.id}>
-            {image.thumbnail_url ? <img src={image.thumbnail_url} alt={image.prompt || "生成圖片"} /> : <div className="image-placeholder">無預覽</div>}
+            {image.data_url || image.thumbnail_url ? (
+              <img src={image.data_url || image.thumbnail_url || ""} alt={image.prompt || "生成圖片"} />
+            ) : (
+              <div className="image-placeholder">無預覽</div>
+            )}
             <div>
               <strong>{label(image.girl_style)} / {label(image.outfit)}</strong>
+              <span>狀態：{statusLabel(image.local_status || "new")} / 來源：{image.source || "supabase"}</span>
+              {image.upload_warning ? <span className="error-text">{image.upload_warning}</span> : null}
               <span className="clamp">{image.prompt}</span>
               <span>
                 髮型：{label(image.hairstyle)} / {label(image.hair_color)}<br />
@@ -44,8 +106,18 @@ export default function GalleryPage() {
                 建立時間：{new Date(image.created_at).toLocaleString("zh-HK")}
               </span>
               <div className="card-actions">
+                {image.source === "local" ? (
+                  <>
+                    <button type="button" onClick={() => markImage(image.id, "selected")}>保留</button>
+                    <button type="button" onClick={() => markImage(image.id, "rejected")}>唔要</button>
+                  </>
+                ) : null}
                 {image.google_drive_url ? <a href={image.google_drive_url} target="_blank">Google Drive</a> : null}
-                <a href={`/api/generated/${image.id}/download`}>下載 PNG</a>
+                {image.data_url ? (
+                  <a href={image.data_url} download={image.file_name || "generated.png"}>下載 PNG</a>
+                ) : (
+                  <a href={`/api/generated/${image.id}/download`}>下載 PNG</a>
+                )}
               </div>
             </div>
           </article>
@@ -57,4 +129,10 @@ export default function GalleryPage() {
 
 function label(value?: string | null) {
   return value ? OPTION_LABELS[value] || value : "未設定";
+}
+
+function statusLabel(value: string) {
+  if (value === "selected") return "已保留";
+  if (value === "rejected") return "唔要";
+  return "新生成";
 }

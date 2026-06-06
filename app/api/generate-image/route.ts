@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { formatAppSettingsError, getOpenAIKey } from "@/lib/app-settings";
 import { downloadDriveFile, makeGeneratedFileName, uploadGeneratedImage } from "@/lib/google-drive";
+import { imageDataUrlToBuffer } from "@/lib/image-data";
 import {
   OPENAI_IMAGE_MODEL,
   OPENAI_IMAGE_QUALITY,
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
     const warnings = new Set<string>();
 
     for (let index = 0; index < payload.count; index += 1) {
-      const imageBuffer = await generateImageWithOpenAI(prompt, references);
+      const imageBuffer = await generateImageWithOpenAI(prompt, references, payload);
       const fileName = makeGeneratedFileName({
         scene: sceneAsset.sub_category || sceneAsset.file_name,
         girlStyle: payload.girlStyle,
@@ -169,7 +170,7 @@ function validatePayload(payload: GeneratePayload) {
   if (![1, 2, 4].includes(payload.count)) throw new Error("生成數量只支援 1、2 或 4。");
 }
 
-async function generateImageWithOpenAI(prompt: string, references: DriveAsset[]) {
+async function generateImageWithOpenAI(prompt: string, references: DriveAsset[], payload: GeneratePayload) {
   const apiKey = await getOpenAIKey();
   if (!apiKey) throw new Error("未設定 OpenAI API key，請先到設定頁輸入。");
   if (!references.length) throw new Error("請至少選擇一張場景圖作為 OpenAI image edit 參考。");
@@ -182,7 +183,13 @@ async function generateImageWithOpenAI(prompt: string, references: DriveAsset[])
   formData.append("quality", OPENAI_IMAGE_QUALITY);
   formData.append("output_format", "png");
 
-  for (const asset of references.slice(0, 5)) {
+  if (payload.sceneDataUrl) {
+    const { buffer, mimeType } = imageDataUrlToBuffer(payload.sceneDataUrl);
+    if (buffer.length > MAX_REFERENCE_BYTES) throw new Error("臨時場景圖超過 50MB，請先壓縮後再用。");
+    formData.append("image[]", new Blob([buffer], { type: mimeType }), payload.sceneFileName || "temporary-scene.png");
+  }
+
+  for (const asset of (payload.sceneDataUrl ? references.slice(1, 5) : references.slice(0, 5))) {
     const buffer = await downloadDriveFile(asset.google_drive_file_id);
     if (buffer.length > MAX_REFERENCE_BYTES) {
       throw new Error(`參考圖 ${asset.file_name || asset.google_drive_file_id} 超過 50MB，請先壓縮後再用。`);
