@@ -17,7 +17,10 @@ import {
   deleteLocalAsset,
   downloadJson,
   loadLocalAssets,
+  loadLocalQueue,
+  LocalQueueJob,
   saveGeneratedBatch,
+  saveLocalQueue,
   saveLocalAsset,
   updateLocalImageStatus
 } from "@/lib/local-history";
@@ -39,18 +42,8 @@ type SceneVariation = {
   created_at: string;
 };
 
-type QueueJobStatus = "pending" | "running" | "done" | "failed";
-
-type QueueJob = {
-  id: string;
-  label: string;
-  payload: GeneratePayload;
-  assets: DriveAsset[];
-  status: QueueJobStatus;
-  message: string;
-  createdAt: string;
-  results?: GeneratedImage[];
-};
+type QueueJob = LocalQueueJob;
+type QueueJobStatus = LocalQueueJob["status"];
 
 const emptyAssets: AssetsByCategory = {
   scene: [],
@@ -96,10 +89,33 @@ export default function GeneratePage() {
   const [queueRunning, setQueueRunning] = useState(false);
   const queueRef = useRef<QueueJob[]>([]);
   const queueRunningRef = useRef(false);
+  const queueSaveChainRef = useRef(Promise.resolve());
 
   useEffect(() => {
     fetchAssets();
+    restoreQueue();
   }, []);
+
+  async function restoreQueue() {
+    try {
+      const storedQueue = await loadLocalQueue();
+      const normalizedQueue = storedQueue.map((job) => (
+        job.status === "running"
+          ? { ...job, status: "failed" as const, message: "頁面曾經重新載入，請按重試繼續。" }
+          : job
+      ));
+      queueRef.current = normalizedQueue;
+      setQueue(normalizedQueue);
+      if (normalizedQueue.some((job, index) => job !== storedQueue[index])) {
+        await saveLocalQueue(normalizedQueue);
+      }
+      if (normalizedQueue.length) {
+        setStatus(`已恢復 ${normalizedQueue.length} 個列隊任務。`);
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "讀取列隊失敗。");
+    }
+  }
 
   async function fetchAssets() {
     setLoadingAssets(true);
@@ -189,6 +205,9 @@ export default function GeneratePage() {
     const next = updater(queueRef.current);
     queueRef.current = next;
     setQueue(next);
+    queueSaveChainRef.current = queueSaveChainRef.current
+      .then(() => saveLocalQueue(next))
+      .catch(() => saveLocalQueue(next));
   }
 
   async function runGenerationPayload(payloadSnapshot: GeneratePayload, assetSnapshot: DriveAsset[]) {
@@ -283,6 +302,14 @@ export default function GeneratePage() {
 
   function clearFinishedQueueJobs() {
     updateQueue((current) => current.filter((item) => item.status !== "done"));
+  }
+
+  function deleteQueueJob(id: string) {
+    updateQueue((current) => current.filter((item) => item.id !== id || item.status === "running"));
+  }
+
+  function clearQueue() {
+    updateQueue((current) => current.filter((item) => item.status === "running"));
   }
 
   async function generateSimilarScene() {
@@ -428,7 +455,7 @@ export default function GeneratePage() {
           <div className="queue-panel">
             <div>
               <strong>生成列隊</strong>
-              <p className="muted">適合一次排幾組場景/造型，系統會逐個生成。請保持此頁開住直到完成。</p>
+              <p className="muted">適合一次排幾組場景/造型，系統會逐個生成；列隊會保存在本機，刷新後仍可重試未完成任務。</p>
             </div>
             <div className="card-actions">
               <button type="button" onClick={enqueueCurrent} disabled={!selectedScene}>加入列隊</button>
@@ -436,6 +463,7 @@ export default function GeneratePage() {
                 {queueRunning ? "列隊處理中..." : "開始列隊"}
               </button>
               <button type="button" onClick={clearFinishedQueueJobs} disabled={!queue.some((job) => job.status === "done")}>清走完成</button>
+              <button type="button" onClick={clearQueue} disabled={!queue.some((job) => job.status !== "running")}>清空列隊</button>
             </div>
             {queue.length ? (
               <div className="queue-list">
@@ -445,7 +473,10 @@ export default function GeneratePage() {
                       <strong>{job.label}</strong>
                       <span>{queueStatusLabel(job.status)} / {job.message}</span>
                     </div>
-                    {job.status === "failed" ? <button type="button" onClick={() => retryQueueJob(job.id)}>重試</button> : null}
+                    <div className="queue-actions">
+                      {job.status === "failed" ? <button type="button" onClick={() => retryQueueJob(job.id)}>重試</button> : null}
+                      {job.status !== "running" ? <button type="button" onClick={() => deleteQueueJob(job.id)}>刪除</button> : null}
+                    </div>
                   </article>
                 ))}
               </div>

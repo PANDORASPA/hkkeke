@@ -3,10 +3,11 @@
 import { AssetCategory, DriveAsset, GeneratedImage, GeneratePayload } from "./types";
 
 const DB_NAME = "ai-girl-generator";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const IMAGE_STORE = "images";
 const BATCH_STORE = "batches";
 const ASSET_STORE = "assets";
+const QUEUE_STORE = "queue";
 
 export type LocalBatch = {
   id: string;
@@ -29,6 +30,17 @@ export type LocalAsset = DriveAsset & {
   created_at: string;
 };
 
+export type LocalQueueJob = {
+  id: string;
+  label: string;
+  payload: GeneratePayload;
+  assets: DriveAsset[];
+  status: "pending" | "running" | "done" | "failed";
+  message: string;
+  createdAt: string;
+  results?: GeneratedImage[];
+};
+
 function openDb() {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -48,6 +60,11 @@ function openDb() {
         assets.createIndex("category", "category");
         assets.createIndex("created_at", "created_at");
       }
+      if (!db.objectStoreNames.contains(QUEUE_STORE)) {
+        const queue = db.createObjectStore(QUEUE_STORE, { keyPath: "id" });
+        queue.createIndex("createdAt", "createdAt");
+        queue.createIndex("status", "status");
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error("IndexedDB 開啟失敗。"));
@@ -66,14 +83,6 @@ function storeGetAll<T>(store: IDBObjectStore) {
   return new Promise<T[]>((resolve, reject) => {
     const request = store.getAll();
     request.onsuccess = () => resolve(request.result as T[]);
-    request.onerror = () => reject(request.error || new Error("IndexedDB 讀取失敗。"));
-  });
-}
-
-function storeGet<T>(store: IDBObjectStore, key: IDBValidKey) {
-  return new Promise<T | undefined>((resolve, reject) => {
-    const request = store.get(key);
-    request.onsuccess = () => resolve(request.result as T | undefined);
     request.onerror = () => reject(request.error || new Error("IndexedDB 讀取失敗。"));
   });
 }
@@ -141,16 +150,18 @@ export async function updateLocalImageStatus(id: string, status: LocalGeneratedI
 
 export async function buildLocalManifest() {
   const db = await openDb();
-  const tx = db.transaction([IMAGE_STORE, BATCH_STORE, ASSET_STORE], "readonly");
+  const tx = db.transaction([IMAGE_STORE, BATCH_STORE, ASSET_STORE, QUEUE_STORE], "readonly");
   const images = await storeGetAll<LocalGeneratedImage>(tx.objectStore(IMAGE_STORE));
   const batches = await storeGetAll<LocalBatch>(tx.objectStore(BATCH_STORE));
   const assets = await storeGetAll<LocalAsset>(tx.objectStore(ASSET_STORE));
+  const queue = await storeGetAll<LocalQueueJob>(tx.objectStore(QUEUE_STORE));
   db.close();
   return {
     version: 1,
     exported_at: new Date().toISOString(),
     batches,
     assets,
+    queue,
     images
   };
 }
@@ -200,6 +211,27 @@ export async function deleteLocalAsset(id: string) {
     tx.onerror = () => reject(tx.error || new Error("刪除本地素材失敗。"));
   });
   db.close();
+}
+
+export async function saveLocalQueue(jobs: LocalQueueJob[]) {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(QUEUE_STORE, "readwrite");
+    const store = tx.objectStore(QUEUE_STORE);
+    store.clear();
+    for (const job of jobs) store.put(job);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("保存列隊失敗。"));
+  });
+  db.close();
+}
+
+export async function loadLocalQueue() {
+  const db = await openDb();
+  const tx = db.transaction(QUEUE_STORE, "readonly");
+  const jobs = await storeGetAll<LocalQueueJob>(tx.objectStore(QUEUE_STORE));
+  db.close();
+  return jobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 function fileToDataUrl(file: File) {

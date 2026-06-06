@@ -291,6 +291,13 @@ label {
   min-width: 0;
 }
 
+.queue-actions {
+  display: flex !important;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .queue-item strong,
 .queue-item span {
   overflow-wrap: anywhere;
@@ -508,5 +515,9 @@ pre {
 
   .queue-item {
     grid-template-columns: 1fr;
+  }
+
+  .queue-actions {
+    justify-content: flex-start;
   }
 }
