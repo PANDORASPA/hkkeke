@@ -95,8 +95,10 @@ export default function GeneratePage() {
   const [results, setResults] = useState<GeneratedImage[]>([]);
   const [queue, setQueue] = useState<QueueJob[]>([]);
   const [queueRunning, setQueueRunning] = useState(false);
+  const [queuePaused, setQueuePaused] = useState(false);
   const queueRef = useRef<QueueJob[]>([]);
   const queueRunningRef = useRef(false);
+  const queuePausedRef = useRef(false);
   const queueSaveChainRef = useRef(Promise.resolve());
 
   useEffect(() => {
@@ -208,6 +210,19 @@ export default function GeneratePage() {
     ].filter(Boolean) as DriveAsset[],
     [assets, selectedScene, selectedGirl, selectedOutfitAsset, selectedHairAsset, selectedPoseAsset]
   );
+
+  const queueStats = useMemo(() => {
+    const totalJobs = queue.length;
+    const pendingJobs = queue.filter((job) => job.status === "pending").length;
+    const runningJobs = queue.filter((job) => job.status === "running").length;
+    const doneJobs = queue.filter((job) => job.status === "done").length;
+    const failedJobs = queue.filter((job) => job.status === "failed").length;
+    const plannedImages = queue.reduce((sum, job) => sum + job.payload.count, 0);
+    const doneImages = queue
+      .filter((job) => job.status === "done")
+      .reduce((sum, job) => sum + (job.results?.length || job.payload.count), 0);
+    return { totalJobs, pendingJobs, runningJobs, doneJobs, failedJobs, plannedImages, doneImages };
+  }, [queue]);
 
   function buildPayloadFromAssets(input: {
     scene: DriveAsset;
@@ -393,11 +408,17 @@ export default function GeneratePage() {
 
   async function processQueue() {
     if (queueRunningRef.current) return;
+    queuePausedRef.current = false;
+    setQueuePaused(false);
     queueRunningRef.current = true;
     setQueueRunning(true);
     setStatus("列隊開始處理，會逐個任務生成，減少 rate limit 風險。");
     try {
       while (true) {
+        if (queuePausedRef.current) {
+          setStatus("列隊已暫停。當前任務已完成後停止，按「繼續列隊」可再開始。");
+          break;
+        }
         const job = queueRef.current.find((item) => item.status === "pending");
         if (!job) break;
         updateQueue((current) => current.map((item) => item.id === job.id ? { ...item, status: "running", message: "生成中..." } : item));
@@ -428,9 +449,26 @@ export default function GeneratePage() {
     }
   }
 
+  function pauseQueue() {
+    queuePausedRef.current = true;
+    setQueuePaused(true);
+    setStatus("已要求暫停；目前任務完成後會停止。");
+  }
+
+  function resumeQueue() {
+    queuePausedRef.current = false;
+    setQueuePaused(false);
+    void processQueue();
+  }
+
   function retryQueueJob(id: string) {
     updateQueue((current) => current.map((item) => item.id === id ? { ...item, status: "pending", message: "等待重試" } : item));
     void processQueue();
+  }
+
+  function retryAllFailedJobs() {
+    updateQueue((current) => current.map((item) => item.status === "failed" ? { ...item, status: "pending", message: "等待批量重試" } : item));
+    setStatus("已把所有失敗任務放回等待中。");
   }
 
   function clearFinishedQueueJobs() {
@@ -670,11 +708,22 @@ export default function GeneratePage() {
               <strong>生成列隊</strong>
               <p className="muted">適合一次排幾組場景/造型，系統會逐個生成；列隊會保存在本機，刷新後仍可重試未完成任務。</p>
             </div>
+            <div className="queue-stats">
+              <span>任務：{queueStats.totalJobs}</span>
+              <span>等待：{queueStats.pendingJobs}</span>
+              <span>生成中：{queueStats.runningJobs}</span>
+              <span>完成：{queueStats.doneJobs}</span>
+              <span>失敗：{queueStats.failedJobs}</span>
+              <span>圖片：{queueStats.doneImages}/{queueStats.plannedImages}</span>
+            </div>
             <div className="card-actions">
               <button type="button" onClick={enqueueCurrent} disabled={!selectedScene}>加入列隊</button>
               <button type="button" onClick={processQueue} disabled={queueRunning || !queue.some((job) => job.status === "pending")}>
                 {queueRunning ? "列隊處理中..." : "開始列隊"}
               </button>
+              <button type="button" onClick={pauseQueue} disabled={!queueRunning || queuePaused}>暫停</button>
+              <button type="button" onClick={resumeQueue} disabled={queueRunning || !queue.some((job) => job.status === "pending")}>繼續列隊</button>
+              <button type="button" onClick={retryAllFailedJobs} disabled={!queue.some((job) => job.status === "failed")}>重試全部失敗</button>
               <button type="button" onClick={clearFinishedQueueJobs} disabled={!queue.some((job) => job.status === "done")}>清走完成</button>
               <button type="button" onClick={clearQueue} disabled={!queue.some((job) => job.status !== "running")}>清空列隊</button>
             </div>

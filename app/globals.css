@@ -268,6 +268,22 @@ label {
   gap: 10px;
 }
 
+.queue-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.queue-stats span {
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .queue-panel,
 .factory-panel {
   padding: 12px;
@@ -554,6 +570,10 @@ pre {
 
   .queue-item {
     grid-template-columns: 1fr;
+  }
+
+  .queue-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .queue-actions {
