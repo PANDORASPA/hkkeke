@@ -18,6 +18,9 @@ export type GeneratedImage = {
   google_drive_file_id: string | null;
   google_drive_url: string | null;
   thumbnail_url: string | null;
+  data_url?: string | null;
+  file_name?: string | null;
+  upload_warning?: string | null;
   prompt: string | null;
   negative_prompt: string | null;
   scene_asset_id: string | null;

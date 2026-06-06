@@ -140,7 +140,8 @@ export default function GeneratePage() {
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "生成失敗。");
       setResults(json.images);
-      setStatus(`完成生成 ${json.images.length} 張圖片，已自動上傳到 Google Drive 並寫入 Supabase。`);
+      const warning = json.warnings?.length ? ` 提示：${json.warnings.join(" ")}` : "";
+      setStatus(`完成生成 ${json.images.length} 張圖片。${warning}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "生成失敗。");
     } finally {
@@ -204,13 +205,22 @@ export default function GeneratePage() {
           <div className="result-grid">
             {results.map((image) => (
               <article className="image-card" key={image.id}>
-                {image.thumbnail_url ? <img src={image.thumbnail_url} alt="生成圖片" /> : null}
+                {image.data_url || image.thumbnail_url ? (
+                  <img src={image.data_url || image.thumbnail_url || ""} alt="生成圖片" />
+                ) : (
+                  <div className="image-placeholder">無預覽</div>
+                )}
                 <div>
                   <strong>{label(image.girl_style)} / {label(image.outfit)}</strong>
+                  {image.upload_warning ? <span className="error-text">{image.upload_warning}</span> : null}
                   <span>{image.prompt}</span>
                   <div className="card-actions">
                     {image.google_drive_url ? <a href={image.google_drive_url} target="_blank">Google Drive</a> : null}
-                    <a href={`/api/generated/${image.id}/download`}>下載</a>
+                    {image.data_url ? (
+                      <a href={image.data_url} download={image.file_name || "generated.png"}>下載</a>
+                    ) : (
+                      <a href={`/api/generated/${image.id}/download`}>下載</a>
+                    )}
                   </div>
                 </div>
               </article>

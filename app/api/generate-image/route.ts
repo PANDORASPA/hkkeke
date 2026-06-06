@@ -23,6 +23,8 @@ type OpenAIImageResponse = {
   }>;
 };
 
+type SupabaseAdmin = ReturnType<typeof getSupabaseAdmin>;
+
 export async function POST(request: NextRequest) {
   try {
     const payload = (await request.json()) as GeneratePayload;
@@ -42,12 +44,10 @@ export async function POST(request: NextRequest) {
     ).filter(Boolean) as DriveAsset[];
 
     const references = [sceneAsset, ...optionalAssets];
-    const prompt = buildPrompt(payload, {
-      scene: sceneAsset,
-      extras: optionalAssets
-    });
+    const prompt = buildPrompt(payload, { scene: sceneAsset, extras: optionalAssets });
     const negativePrompt = getNegativePrompt();
-    const results = [];
+    const images = [];
+    const warnings = new Set<string>();
 
     for (let index = 0; index < payload.count; index += 1) {
       const imageBuffer = await generateImageWithOpenAI(prompt, references);
@@ -57,12 +57,8 @@ export async function POST(request: NextRequest) {
         hairStyle: payload.hairStyle,
         outfit: payload.outfit
       });
-      const uploaded = await uploadGeneratedImage(imageBuffer, fileName);
 
-      const record = {
-        google_drive_file_id: uploaded.google_drive_file_id,
-        google_drive_url: uploaded.google_drive_url,
-        thumbnail_url: uploaded.thumbnail_url,
+      const baseRecord = {
         prompt,
         negative_prompt: negativePrompt,
         scene_asset_id: payload.sceneAssetId,
@@ -79,19 +75,61 @@ export async function POST(request: NextRequest) {
         pose: payload.pose
       };
 
-      const { data, error } = await supabase.from("generated_images").insert(record).select("*").single();
-      if (error) {
-        results.push({
-          id: uploaded.google_drive_file_id,
-          ...record,
-          created_at: new Date().toISOString()
-        });
-      } else {
-        results.push(data);
+      let uploadWarning = "";
+      let uploaded:
+        | {
+            google_drive_file_id: string;
+            google_drive_url: string | null;
+            thumbnail_url: string | null;
+          }
+        | null = null;
+
+      try {
+        uploaded = await uploadGeneratedImage(imageBuffer, fileName);
+      } catch (error) {
+        uploadWarning = explainDriveUploadError(error);
+        warnings.add(uploadWarning);
       }
+
+      const fallbackId = `local-${Date.now()}-${index}`;
+      const record = {
+        id: uploaded?.google_drive_file_id || fallbackId,
+        google_drive_file_id: uploaded?.google_drive_file_id || null,
+        google_drive_url: uploaded?.google_drive_url || null,
+        thumbnail_url: uploaded?.thumbnail_url || null,
+        data_url: uploaded ? null : `data:image/png;base64,${imageBuffer.toString("base64")}`,
+        file_name: fileName,
+        upload_warning: uploadWarning || null,
+        ...baseRecord,
+        created_at: new Date().toISOString()
+      };
+
+      if (uploaded) {
+        try {
+          const { data, error } = await supabase
+            .from("generated_images")
+            .insert({
+              google_drive_file_id: uploaded.google_drive_file_id,
+              google_drive_url: uploaded.google_drive_url,
+              thumbnail_url: uploaded.thumbnail_url,
+              ...baseRecord
+            })
+            .select("*")
+            .single();
+          if (!error && data) {
+            images.push({ ...data, file_name: fileName, upload_warning: null });
+            continue;
+          }
+          if (error) warnings.add(formatAppSettingsError(error));
+        } catch (error) {
+          warnings.add(formatAppSettingsError(error));
+        }
+      }
+
+      images.push(record);
     }
 
-    return NextResponse.json({ images: results });
+    return NextResponse.json({ images, warnings: Array.from(warnings) });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "生成失敗。" },
@@ -100,11 +138,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function resolveAsset(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  assetId: string,
-  category: DriveAsset["category"]
-) {
+async function resolveAsset(supabase: SupabaseAdmin, assetId: string, category: DriveAsset["category"]) {
   try {
     const { data, error } = await supabase
       .from("drive_assets")
@@ -163,9 +197,7 @@ async function generateImageWithOpenAI(prompt: string, references: DriveAsset[])
     body: formData
   });
 
-  if (!response.ok) {
-    throw new Error(await parseOpenAIError(response));
-  }
+  if (!response.ok) throw new Error(await parseOpenAIError(response));
 
   const json = (await response.json()) as OpenAIImageResponse;
   const b64 = json.data?.[0]?.b64_json;
@@ -179,4 +211,15 @@ async function generateImageWithOpenAI(prompt: string, references: DriveAsset[])
   }
 
   throw new Error("OpenAI 回應沒有包含 b64_json 或圖片 URL。");
+}
+
+function explainDriveUploadError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("storageQuotaExceeded") || message.includes("Service Accounts do not have storage quota")) {
+    return [
+      "圖片已生成，但 Google Drive 上傳失敗：Service Account 沒有個人儲存空間 quota。",
+      "目前已先提供本機下載。要自動上傳 Drive，請把成品資料夾放在 Google Shared Drive，或改用 Google OAuth 使用者授權。"
+    ].join(" ");
+  }
+  return `圖片已生成，但 Google Drive 上傳失敗：${message}`;
 }
