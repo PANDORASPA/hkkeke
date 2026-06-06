@@ -141,6 +141,14 @@ export async function loadLocalImages() {
   return images.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
+export async function loadLocalBatches() {
+  const db = await openDb();
+  const tx = db.transaction(BATCH_STORE, "readonly");
+  const batches = await storeGetAll<LocalBatch>(tx.objectStore(BATCH_STORE));
+  db.close();
+  return batches.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
 export async function updateLocalImageStatus(id: string, status: LocalGeneratedImage["local_status"]) {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {

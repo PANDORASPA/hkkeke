@@ -6,7 +6,9 @@ import {
   deleteLocalImage,
   deleteLocalImages,
   downloadJson,
+  loadLocalBatches,
   loadLocalImages,
+  LocalBatch,
   updateLocalImageStatus,
   updateLocalImagesStatus
 } from "@/lib/local-history";
@@ -19,6 +21,7 @@ type SourceFilter = "all" | "local" | "supabase";
 export default function GalleryPage() {
   const [remoteImages, setRemoteImages] = useState<GeneratedImage[]>([]);
   const [localImages, setLocalImages] = useState<GeneratedImage[]>([]);
+  const [localBatches, setLocalBatches] = useState<LocalBatch[]>([]);
   const [status, setStatus] = useState("正在讀取圖庫...");
   const [filter, setFilter] = useState<GalleryFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
@@ -35,8 +38,10 @@ export default function GalleryPage() {
 
     try {
       const local = await loadLocalImages();
+      const batches = await loadLocalBatches();
       setLocalImages(local);
-      messages.push(`本地歷史 ${local.length} 張`);
+      setLocalBatches(batches);
+      messages.push(`本地歷史 ${local.length} 張 / 批次 ${batches.length}`);
     } catch (error) {
       messages.push(error instanceof Error ? error.message : "本地歷史讀取失敗。");
     }
@@ -84,6 +89,18 @@ export default function GalleryPage() {
     downloadJson(manifest, `ai-girl-generator_${new Date().toISOString().slice(0, 10)}.json`);
   }
 
+  function exportBatch(batch: LocalBatch) {
+    const batchImages = localImages.filter((image) => batch.image_ids.includes(image.id));
+    downloadJson({
+      version: 1,
+      exported_at: new Date().toISOString(),
+      batches: [batch],
+      images: batchImages,
+      assets: batch.assets,
+      queue: []
+    }, `${batch.id}_${new Date(batch.created_at).toISOString().slice(0, 10)}.json`);
+  }
+
   const mergedImages = useMemo(() => {
     const localIds = new Set(localImages.map((image) => image.id));
     return [
@@ -104,6 +121,23 @@ export default function GalleryPage() {
     () => images.filter((image) => image.source === "local").map((image) => image.id),
     [images]
   );
+
+  const batchReports = useMemo(() => {
+    return localBatches.map((batch) => {
+      const batchImages = localImages.filter((image) => batch.image_ids.includes(image.id));
+      const selected = batchImages.filter((image) => image.local_status === "selected").length;
+      const rejected = batchImages.filter((image) => image.local_status === "rejected").length;
+      const fresh = batchImages.filter((image) => (image.local_status || "new") === "new").length;
+      return {
+        batch,
+        images: batchImages,
+        selected,
+        rejected,
+        fresh,
+        missing: Math.max(0, batch.image_ids.length - batchImages.length)
+      };
+    }).filter((report) => report.images.length || report.missing);
+  }, [localBatches, localImages]);
 
   const stats = useMemo(() => {
     return {
@@ -133,6 +167,34 @@ export default function GalleryPage() {
     await deleteLocalImages(visibleLocalIds);
     setLocalImages((current) => current.filter((image) => !visibleLocalIds.includes(image.id)));
     setStatus(`已刪除 ${visibleLocalIds.length} 張可見本機圖片。`);
+  }
+
+  function focusBatch(batchId: string) {
+    setSourceFilter("local");
+    setFilter("all");
+    setTodayOnly(false);
+    setSearch(batchId);
+    setStatus(`已篩選批次：${batchId}`);
+  }
+
+  async function markBatch(batch: LocalBatch, nextStatus: "selected" | "rejected" | "new") {
+    const ids = localImages.filter((image) => batch.image_ids.includes(image.id)).map((image) => image.id);
+    if (!ids.length) return;
+    await updateLocalImagesStatus(ids, nextStatus);
+    setLocalImages((current) =>
+      current.map((image) => ids.includes(image.id) ? { ...image, local_status: nextStatus } : image)
+    );
+    setStatus(`已把批次 ${shortId(batch.id)} 的 ${ids.length} 張圖片標記為「${statusLabel(nextStatus)}」。`);
+  }
+
+  async function deleteBatchImages(batch: LocalBatch) {
+    const ids = localImages.filter((image) => batch.image_ids.includes(image.id)).map((image) => image.id);
+    if (!ids.length) return;
+    const ok = window.confirm(`確定刪除批次 ${shortId(batch.id)} 的 ${ids.length} 張本機圖片？這不會刪 Google Drive。`);
+    if (!ok) return;
+    await deleteLocalImages(ids);
+    setLocalImages((current) => current.filter((image) => !ids.includes(image.id)));
+    setStatus(`已刪除批次 ${shortId(batch.id)} 的 ${ids.length} 張本機圖片。`);
   }
 
   return (
@@ -184,6 +246,47 @@ export default function GalleryPage() {
         <span>新生成 {stats.new}</span>
         <span>已保留 {stats.selected}</span>
         <span>唔要 {stats.rejected}</span>
+      </section>
+
+      <section className="batch-panel">
+        <div className="batch-panel-heading">
+          <div>
+            <strong>批次報表</strong>
+            <p className="muted">每次生成會保存成一個批次；大量生產後可用批次快速追蹤、標記和匯出。</p>
+          </div>
+          <span>{batchReports.length} 個批次</span>
+        </div>
+        {!batchReports.length ? (
+          <div className="empty-state">
+            <strong>未有本機批次</strong>
+            <span>生成或匯入素材包後，批次會顯示在這裡。</span>
+          </div>
+        ) : (
+          <div className="batch-list">
+            {batchReports.slice(0, 12).map((report) => (
+              <article className="batch-item" key={report.batch.id}>
+                <div>
+                  <strong>{shortId(report.batch.id)} / {new Date(report.batch.created_at).toLocaleString("zh-HK")}</strong>
+                  <span>
+                    圖片 {report.images.length}
+                    {report.missing ? ` / 缺少 ${report.missing}` : ""}
+                    {" "} / 新生成 {report.fresh} / 已保留 {report.selected} / 唔要 {report.rejected}
+                  </span>
+                  <span>
+                    {label(report.batch.payload.girlStyle)} / {label(report.batch.payload.outfit)} / {label(report.batch.payload.hairStyle)} / {label(report.batch.payload.pose)}
+                  </span>
+                </div>
+                <div className="queue-actions">
+                  <button type="button" onClick={() => focusBatch(report.batch.id)}>查看批次</button>
+                  <button type="button" onClick={() => markBatch(report.batch, "selected")}>整批保留</button>
+                  <button type="button" onClick={() => markBatch(report.batch, "rejected")}>整批唔要</button>
+                  <button type="button" onClick={() => exportBatch(report.batch)}>匯出批次</button>
+                  <button type="button" onClick={() => deleteBatchImages(report.batch)}>刪除批次圖片</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <div className="filter-row">
@@ -271,6 +374,10 @@ function sourceLabel(value?: string | null) {
   return "Supabase";
 }
 
+function shortId(value: string) {
+  return value.replace("batch-", "#");
+}
+
 function isToday(value: string) {
   const date = new Date(value);
   const now = new Date();
@@ -284,6 +391,7 @@ function matchesSearch(image: GeneratedImage, search: string) {
   if (!keyword) return true;
   return [
     image.file_name,
+    image.batch_id,
     image.prompt,
     image.girl_style,
     image.hairstyle,

@@ -328,6 +328,69 @@ label {
   font-weight: 800;
 }
 
+.batch-panel {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.batch-panel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.batch-panel-heading strong {
+  font-size: 15px;
+}
+
+.batch-panel-heading > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.batch-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.batch-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.batch-item > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.batch-item strong,
+.batch-item span {
+  overflow-wrap: anywhere;
+}
+
+.batch-item span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .queue-panel,
 .factory-panel {
   padding: 12px;
@@ -646,6 +709,15 @@ pre {
   }
 
   .bulk-panel {
+    display: grid;
+  }
+
+  .batch-panel-heading,
+  .batch-item {
+    grid-template-columns: 1fr;
+  }
+
+  .batch-panel-heading {
     display: grid;
   }
 
