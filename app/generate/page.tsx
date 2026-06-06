@@ -51,6 +51,8 @@ type FactorySettings = {
   imagesPerJob: string;
   queueDelaySeconds: string;
   useReferenceAssets: boolean;
+  randomizeCombinations: boolean;
+  seed: string;
   extraPrompt: string;
 };
 
@@ -104,6 +106,8 @@ export default function GeneratePage() {
     imagesPerJob: "4",
     queueDelaySeconds: "8",
     useReferenceAssets: true,
+    randomizeCombinations: true,
+    seed: todaySeed(),
     extraPrompt: ""
   });
   const [factoryRecipeName, setFactoryRecipeName] = useState("每日 100 張");
@@ -151,7 +155,12 @@ export default function GeneratePage() {
     try {
       const raw = window.localStorage.getItem(FACTORY_RECIPES_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
-      if (Array.isArray(parsed)) setFactoryRecipes(parsed);
+      if (Array.isArray(parsed)) {
+        setFactoryRecipes(parsed.map((recipe) => ({
+          ...recipe,
+          settings: normalizeFactorySettings(recipe.settings)
+        })));
+      }
     } catch {
       setFactoryRecipes([]);
     }
@@ -178,7 +187,7 @@ export default function GeneratePage() {
   function loadFactoryRecipe(id: string) {
     const recipe = factoryRecipes.find((item) => item.id === id);
     if (!recipe) return;
-    setFactory(recipe.settings);
+    setFactory(normalizeFactorySettings(recipe.settings));
     setFactoryRecipeName(recipe.name);
     setStatus(`已套用批量生產配方：${recipe.name}`);
   }
@@ -405,11 +414,23 @@ export default function GeneratePage() {
   }
 
   function enqueueFactoryBatch(autoStart = false) {
-    const scenes = assets.scene;
+    const seed = factory.seed.trim() || todaySeed();
+    const scenes = prepareFactoryList(assets.scene, seed, "scene", factory.randomizeCombinations);
     if (!scenes.length) {
       setStatus("批量生產需要至少一張場景圖。請先同步 Google Drive 素材或上傳本地場景。");
       return;
     }
+    const girls = prepareFactoryList(assets.girl, seed, "girl", factory.randomizeCombinations);
+    const outfitAssets = prepareFactoryList(assets.outfit, seed, "outfit-asset", factory.randomizeCombinations);
+    const hairAssets = prepareFactoryList(assets.hair, seed, "hair-asset", factory.randomizeCombinations);
+    const poseAssets = prepareFactoryList(assets.pose, seed, "pose-asset", factory.randomizeCombinations);
+    const girlStyles = prepareFactoryList(GIRL_STYLES, seed, "girl-style", factory.randomizeCombinations);
+    const hairStyles = prepareFactoryList(HAIR_STYLES, seed, "hair-style", factory.randomizeCombinations);
+    const hairColors = prepareFactoryList(HAIR_COLORS, seed, "hair-color", factory.randomizeCombinations);
+    const outfits = prepareFactoryList(OUTFITS, seed, "outfit", factory.randomizeCombinations);
+    const bodyTypes = prepareFactoryList(BODY_TYPES, seed, "body-type", factory.randomizeCombinations);
+    const expressions = prepareFactoryList(EXPRESSIONS, seed, "expression", factory.randomizeCombinations);
+    const poses = prepareFactoryList(POSES, seed, "pose", factory.randomizeCombinations);
 
     const targetImages = clampNumber(Number(factory.targetImages), 1, 500);
     const preferredCount = normalizeCount(Number(factory.imagesPerJob));
@@ -420,17 +441,17 @@ export default function GeneratePage() {
     while (remaining > 0) {
       const count = normalizeCount(Math.min(preferredCount, remaining));
       const scene = scenes[index % scenes.length];
-      const girl = factory.useReferenceAssets ? pickOptional(assets.girl, index) : undefined;
-      const outfitAsset = factory.useReferenceAssets ? pickOptional(assets.outfit, index + 1) : undefined;
-      const hairAsset = factory.useReferenceAssets ? pickOptional(assets.hair, index + 2) : undefined;
-      const poseAsset = factory.useReferenceAssets ? pickOptional(assets.pose, index + 3) : undefined;
-      const girlStyle = GIRL_STYLES[index % GIRL_STYLES.length];
-      const hairStyle = HAIR_STYLES[(index * 2 + 1) % HAIR_STYLES.length];
-      const hairColor = HAIR_COLORS[(index * 3 + 2) % HAIR_COLORS.length];
-      const outfit = OUTFITS[(index * 5 + 1) % OUTFITS.length];
-      const bodyType = BODY_TYPES[(index * 7 + 3) % BODY_TYPES.length];
-      const expression = EXPRESSIONS[(index * 2 + 4) % EXPRESSIONS.length];
-      const pose = POSES[(index * 3 + 1) % POSES.length];
+      const girl = factory.useReferenceAssets ? pickOptional(girls, index) : undefined;
+      const outfitAsset = factory.useReferenceAssets ? pickOptional(outfitAssets, index + 1) : undefined;
+      const hairAsset = factory.useReferenceAssets ? pickOptional(hairAssets, index + 2) : undefined;
+      const poseAsset = factory.useReferenceAssets ? pickOptional(poseAssets, index + 3) : undefined;
+      const girlStyle = girlStyles[index % girlStyles.length];
+      const hairStyle = hairStyles[(index * 2 + 1) % hairStyles.length];
+      const hairColor = hairColors[(index * 3 + 2) % hairColors.length];
+      const outfit = outfits[(index * 5 + 1) % outfits.length];
+      const bodyType = bodyTypes[(index * 7 + 3) % bodyTypes.length];
+      const expression = expressions[(index * 2 + 4) % expressions.length];
+      const pose = poses[(index * 3 + 1) % poses.length];
       const extraPrompt = [form.extraPrompt, factory.extraPrompt, `Batch production variation ${index + 1}: keep this result visually distinct from the previous generated images.`]
         .filter((value) => value.trim())
         .join("\n");
@@ -464,7 +485,7 @@ export default function GeneratePage() {
     }
 
     updateQueue((current) => [...jobs, ...current]);
-    setStatus(`已建立 ${jobs.length} 個批量任務，目標約 ${targetImages} 張。${autoStart ? "列隊即將開始。" : "可按「開始列隊」生產。"}`);
+    setStatus(`已建立 ${jobs.length} 個批量任務，目標約 ${targetImages} 張。Seed：${seed}。${autoStart ? "列隊即將開始。" : "可按「開始列隊」生產。"}`);
     if (autoStart) window.setTimeout(() => void processQueue(), 50);
   }
 
@@ -771,6 +792,26 @@ export default function GeneratePage() {
                 />
                 使用女仔/衣服/髮型/姿勢參考素材
               </label>
+              <label>
+                生產 seed
+                <input
+                  value={factory.seed}
+                  placeholder="例如：daily-2026-06-06"
+                  onChange={(event) => setFactory({ ...factory, seed: event.target.value })}
+                />
+              </label>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={factory.randomizeCombinations}
+                  onChange={(event) => setFactory({ ...factory, randomizeCombinations: event.target.checked })}
+                />
+                用 seed 隨機化組合
+              </label>
+            </div>
+            <div className="card-actions">
+              <button type="button" onClick={() => setFactory({ ...factory, seed: todaySeed() })}>使用今日 seed</button>
+              <button type="button" onClick={() => setFactory({ ...factory, seed: `batch-${Date.now()}` })}>生成新 seed</button>
             </div>
             <label>
               批量額外 prompt
@@ -904,6 +945,54 @@ function normalizeCount(value: number): 1 | 2 | 4 {
 
 function pickOptional<T>(items: T[], index: number) {
   return items.length ? items[index % items.length] : undefined;
+}
+
+function normalizeFactorySettings(settings: Partial<FactorySettings> = {}): FactorySettings {
+  return {
+    targetImages: settings.targetImages || "100",
+    imagesPerJob: settings.imagesPerJob || "4",
+    queueDelaySeconds: settings.queueDelaySeconds || "8",
+    useReferenceAssets: settings.useReferenceAssets ?? true,
+    randomizeCombinations: settings.randomizeCombinations ?? true,
+    seed: settings.seed || todaySeed(),
+    extraPrompt: settings.extraPrompt || ""
+  };
+}
+
+function todaySeed() {
+  return `daily-${new Date().toISOString().slice(0, 10)}`;
+}
+
+function prepareFactoryList<T>(items: T[], seed: string, salt: string, randomize: boolean) {
+  return randomize ? seededShuffle(items, `${seed}:${salt}`) : [...items];
+}
+
+function seededShuffle<T>(items: T[], seed: string) {
+  const next = [...items];
+  const random = mulberry32(hashString(seed));
+  for (let index = next.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+  }
+  return next;
+}
+
+function hashString(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function mulberry32(seed: number) {
+  return function random() {
+    let value = seed += 0x6D2B79F5;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 function delay(ms: number) {
