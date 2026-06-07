@@ -52,6 +52,7 @@ type FactorySettings = {
   imagesPerJob: string;
   queueDelaySeconds: string;
   maxRetries: string;
+  issueFixes: string[];
   useReferenceAssets: boolean;
   randomizeCombinations: boolean;
   seed: string;
@@ -66,6 +67,39 @@ type FactoryRecipe = {
 };
 
 const FACTORY_RECIPES_KEY = "ai-girl-generator.factory-recipes";
+
+const issueAvoidanceOptions = [
+  {
+    value: "hands",
+    label: "避免手部問題",
+    prompt: "Pay extra attention to anatomically correct hands, natural fingers, relaxed hand poses, and avoid cropped or fused fingers."
+  },
+  {
+    value: "face",
+    label: "避免臉部崩壞",
+    prompt: "Keep the face stable and natural, with realistic eyes, symmetrical facial structure, and no melted or broken facial features."
+  },
+  {
+    value: "background",
+    label: "避免假背景",
+    prompt: "Keep the background physically plausible, with no fake unreadable text, warped signs, duplicated objects, or impossible perspective."
+  },
+  {
+    value: "style",
+    label: "避免風格跑偏",
+    prompt: "Keep the output as realistic Hong Kong candid photography, not anime, not illustration, not over-stylized, and not plastic AI glamour."
+  },
+  {
+    value: "outfit",
+    label: "避免衣服錯誤",
+    prompt: "Make the outfit coherent, wearable, non-explicit, properly fitted, and consistent with the selected clothing style."
+  },
+  {
+    value: "duplicate",
+    label: "避免重複構圖",
+    prompt: "Vary camera distance, angle, lighting, body orientation, and micro-pose so the result does not look like a duplicate of previous images."
+  }
+];
 
 const emptyAssets: AssetsByCategory = {
   scene: [],
@@ -101,6 +135,7 @@ export default function GeneratePage() {
     expression: "natural smile",
     pose: "standing",
     count: "1",
+    issueFixes: ["hands", "face", "background"],
     extraPrompt: ""
   });
   const [factory, setFactory] = useState<FactorySettings>({
@@ -108,6 +143,7 @@ export default function GeneratePage() {
     imagesPerJob: "4",
     queueDelaySeconds: "8",
     maxRetries: "2",
+    issueFixes: ["hands", "face", "background", "duplicate"],
     useReferenceAssets: true,
     randomizeCombinations: true,
     seed: todaySeed(),
@@ -188,6 +224,7 @@ export default function GeneratePage() {
       setFactory((current) => ({
         ...current,
         seed: preset.factory.seed || current.seed,
+        issueFixes: Array.from(new Set([...current.issueFixes, "hands", "face", "background", "duplicate"])),
         extraPrompt: [preset.factory.extraPrompt, current.extraPrompt].filter((value) => value?.trim()).join("\n")
       }));
       setFactoryRecipeName(preset.name);
@@ -296,7 +333,7 @@ export default function GeneratePage() {
       bodyType: form.bodyType,
       expression: form.expression,
       pose: form.pose,
-      extraPrompt: form.extraPrompt,
+      extraPrompt: mergePromptParts(form.extraPrompt, buildIssueAvoidancePrompt(form.issueFixes)),
       count: Number(form.count) as 1 | 2 | 4
     };
   }, [assets, form, sceneVariation, selectedGirl, selectedHairAsset, selectedOutfitAsset, selectedPoseAsset, selectedScene]);
@@ -587,9 +624,13 @@ export default function GeneratePage() {
       const bodyType = bodyTypes[(index * 7 + 3) % bodyTypes.length];
       const expression = expressions[(index * 2 + 4) % expressions.length];
       const pose = poses[(index * 3 + 1) % poses.length];
-      const extraPrompt = [form.extraPrompt, factory.extraPrompt, `Batch production variation ${index + 1}: keep this result visually distinct from the previous generated images.`]
-        .filter((value) => value.trim())
-        .join("\n");
+      const extraPrompt = mergePromptParts(
+        form.extraPrompt,
+        factory.extraPrompt,
+        buildIssueAvoidancePrompt(form.issueFixes),
+        buildIssueAvoidancePrompt(factory.issueFixes),
+        `Batch production variation ${index + 1}: keep this result visually distinct from the previous generated images.`
+      );
 
       const built = buildPayloadFromAssets({
         scene,
@@ -744,6 +785,7 @@ export default function GeneratePage() {
       settings: {
         queueDelaySeconds: factory.queueDelaySeconds,
         maxRetries: factory.maxRetries,
+        issueFixes: factory.issueFixes,
         seed: factory.seed,
         targetImages: factory.targetImages,
         imagesPerJob: factory.imagesPerJob
@@ -776,6 +818,7 @@ export default function GeneratePage() {
         imagesPerJob: factory.imagesPerJob,
         queueDelaySeconds: factory.queueDelaySeconds,
         maxRetries: factory.maxRetries,
+        issueFixes: factory.issueFixes,
         seed: factoryPlan.seed,
         useReferenceAssets: factory.useReferenceAssets,
         randomizeCombinations: factory.randomizeCombinations
@@ -924,6 +967,11 @@ export default function GeneratePage() {
             額外 prompt
             <textarea value={form.extraPrompt} placeholder="例如：黃昏光線、手機街拍、自然構圖" onChange={(event) => setForm({ ...form, extraPrompt: event.target.value })} />
           </label>
+          <IssueFixControls
+            label="單張防錯 prompt"
+            selected={form.issueFixes}
+            onChange={(issueFixes) => setForm({ ...form, issueFixes })}
+          />
           <ReferenceSelect label="女仔參考圖（可選）" value={selectedGirl} assets={assets.girl} onChange={setSelectedGirl} />
           <ReferenceSelect label="衣服參考圖（可選）" value={selectedOutfitAsset} assets={assets.outfit} onChange={setSelectedOutfitAsset} />
           <ReferenceSelect label="髮型參考圖（可選）" value={selectedHairAsset} assets={assets.hair} onChange={setSelectedHairAsset} />
@@ -1125,6 +1173,11 @@ export default function GeneratePage() {
                 onChange={(event) => setFactory({ ...factory, extraPrompt: event.target.value })}
               />
             </label>
+            <IssueFixControls
+              label="批量防錯 prompt"
+              selected={factory.issueFixes}
+              onChange={(issueFixes) => setFactory({ ...factory, issueFixes })}
+            />
             <div className="card-actions">
               <button type="button" onClick={() => enqueueFactoryBatch(false)} disabled={!assets.scene.length}>
                 建立批量列隊
@@ -1263,6 +1316,7 @@ function normalizeFactorySettings(settings: Partial<FactorySettings> = {}): Fact
     imagesPerJob: settings.imagesPerJob || "4",
     queueDelaySeconds: settings.queueDelaySeconds || "8",
     maxRetries: settings.maxRetries || "2",
+    issueFixes: Array.isArray(settings.issueFixes) ? settings.issueFixes : ["hands", "face", "background", "duplicate"],
     useReferenceAssets: settings.useReferenceAssets ?? true,
     randomizeCombinations: settings.randomizeCombinations ?? true,
     seed: settings.seed || todaySeed(),
@@ -1319,6 +1373,43 @@ function mulberry32(seed: number) {
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function buildIssueAvoidancePrompt(selected: string[] = []) {
+  return issueAvoidanceOptions
+    .filter((option) => selected.includes(option.value))
+    .map((option) => option.prompt)
+    .join("\n");
+}
+
+function mergePromptParts(...parts: Array<string | undefined>) {
+  return parts.map((part) => part?.trim()).filter(Boolean).join("\n");
+}
+
+function IssueFixControls(props: { label: string; selected: string[]; onChange: (next: string[]) => void }) {
+  function toggle(value: string) {
+    props.onChange(props.selected.includes(value)
+      ? props.selected.filter((item) => item !== value)
+      : [...props.selected, value]);
+  }
+
+  return (
+    <div className="issue-fix-panel">
+      <strong>{props.label}</strong>
+      <div className="issue-fix-grid">
+        {issueAvoidanceOptions.map((option) => (
+          <label className="check-row" key={option.value}>
+            <input
+              type="checkbox"
+              checked={props.selected.includes(option.value)}
+              onChange={() => toggle(option.value)}
+            />
+            {option.label}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Select(props: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
