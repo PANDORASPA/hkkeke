@@ -332,6 +332,46 @@ export default function GeneratePage() {
     return { totalJobs, pendingJobs, runningJobs, doneJobs, failedJobs, retriedJobs, retryBudget, plannedImages, doneImages, successRate };
   }, [queue]);
 
+  const factoryReadiness = useMemo(() => {
+    const targetImages = clampNumber(Number(factory.targetImages), 1, 500);
+    const imagesPerJob = normalizeCount(Number(factory.imagesPerJob));
+    const estimatedJobs = Math.ceil(targetImages / imagesPerJob);
+    const delaySeconds = clampNumber(Number(factory.queueDelaySeconds), 0, 120);
+    const maxRetries = clampNumber(Number(factory.maxRetries), 0, 5);
+    const estimatedMinutes = Math.max(1, Math.ceil((estimatedJobs * (25 + delaySeconds)) / 60));
+    const warnings: string[] = [];
+    const strengths: string[] = [];
+
+    if (!assets.scene.length) warnings.push("未有場景素材，不能建立批量列隊。");
+    if (assets.scene.length > 0 && assets.scene.length < 5) warnings.push("場景少過 5 張，100 張成品會較容易重複。");
+    if (factory.useReferenceAssets && !assets.girl.length) warnings.push("已勾選參考素材，但未有女仔參考圖。");
+    if (factory.useReferenceAssets && !assets.outfit.length) warnings.push("已勾選參考素材，但未有衣服參考圖。");
+    if (factory.useReferenceAssets && !assets.hair.length) warnings.push("已勾選參考素材，但未有髮型參考圖。");
+    if (factory.useReferenceAssets && !assets.pose.length) warnings.push("已勾選參考素材，但未有姿勢參考圖。");
+    if (delaySeconds < 5 && targetImages >= 50) warnings.push("任務間隔低過 5 秒，大量生成較易遇到 rate limit。");
+    if (maxRetries === 0 && targetImages >= 50) warnings.push("大量生成建議至少 1-2 次自動重試。");
+
+    if (assets.scene.length >= 8) strengths.push("場景素材足夠輪替。");
+    if (!factory.useReferenceAssets || (assets.girl.length && assets.outfit.length && assets.hair.length && assets.pose.length)) {
+      strengths.push("參考素材設定完整。");
+    }
+    if (delaySeconds >= 8) strengths.push("任務間隔較穩陣。");
+    if (maxRetries >= 1) strengths.push("已有自動重試保護。");
+    if (factory.seed.trim()) strengths.push("已設定 seed，方便復盤同重現。");
+
+    return {
+      targetImages,
+      imagesPerJob,
+      estimatedJobs,
+      estimatedMinutes,
+      maxRetries,
+      delaySeconds,
+      warnings,
+      strengths,
+      ready: assets.scene.length > 0 && warnings.length <= 2
+    };
+  }, [assets, factory]);
+
   function buildPayloadFromAssets(input: {
     scene: DriveAsset;
     girl?: DriveAsset;
@@ -843,6 +883,32 @@ export default function GeneratePage() {
             <div>
               <strong>批量生產工廠</strong>
               <p className="muted">用現有場景和設定自動組合大量任務；適合一天 100 張以上的生產流。Gallery 的品質報表可把高保留率組合套用到這裡。</p>
+            </div>
+            <div className={`readiness-panel ${factoryReadiness.ready ? "ready" : "warning"}`}>
+              <div className="readiness-heading">
+                <strong>{factoryReadiness.ready ? "生產前檢查：可以開工" : "生產前檢查：需要留意"}</strong>
+                <span>約 {factoryReadiness.estimatedJobs} 個任務 / {factoryReadiness.targetImages} 張 / 約 {factoryReadiness.estimatedMinutes} 分鐘</span>
+              </div>
+              <div className="readiness-stats">
+                <span>場景 {assets.scene.length}</span>
+                <span>女仔 {assets.girl.length}</span>
+                <span>衣服 {assets.outfit.length}</span>
+                <span>髮型 {assets.hair.length}</span>
+                <span>姿勢 {assets.pose.length}</span>
+                <span>每任務 {factoryReadiness.imagesPerJob} 張</span>
+                <span>間隔 {factoryReadiness.delaySeconds} 秒</span>
+                <span>重試 {factoryReadiness.maxRetries} 次</span>
+              </div>
+              {factoryReadiness.warnings.length ? (
+                <div className="readiness-list warning">
+                  {factoryReadiness.warnings.map((warning) => <span key={warning}>{warning}</span>)}
+                </div>
+              ) : null}
+              {factoryReadiness.strengths.length ? (
+                <div className="readiness-list ready">
+                  {factoryReadiness.strengths.map((item) => <span key={item}>{item}</span>)}
+                </div>
+              ) : null}
             </div>
             <div className="recipe-tools">
               <label>
