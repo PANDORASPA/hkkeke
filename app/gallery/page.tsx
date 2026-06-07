@@ -13,6 +13,7 @@ import {
   updateLocalImagesStatus
 } from "@/lib/local-history";
 import { OPTION_LABELS } from "@/lib/options";
+import { PRODUCTION_PRESET_KEY, ProductionPreset } from "@/lib/production-preset";
 import { GeneratedImage } from "@/lib/types";
 
 type GalleryFilter = "all" | "selected" | "rejected" | "new";
@@ -174,6 +175,7 @@ export default function GalleryPage() {
   }, [images.length, mergedImages]);
 
   const qualityReport = useMemo(() => buildQualityReport(mergedImages), [mergedImages]);
+  const recommendedPreset = useMemo(() => buildRecommendedPreset(mergedImages, qualityReport.summary), [mergedImages, qualityReport.summary]);
 
   async function bulkMarkVisible(nextStatus: "selected" | "rejected" | "new") {
     if (!visibleLocalIds.length) return;
@@ -207,6 +209,12 @@ export default function GalleryPage() {
     setTodayOnly(false);
     setSearch(value);
     setStatus(`已篩選品質項目：${label(value)}`);
+  }
+
+  function applyRecommendedPreset() {
+    if (!recommendedPreset) return;
+    window.localStorage.setItem(PRODUCTION_PRESET_KEY, JSON.stringify(recommendedPreset));
+    window.location.href = "/generate?preset=quality";
   }
 
   async function markBatch(batch: LocalBatch, nextStatus: "selected" | "rejected" | "new") {
@@ -286,7 +294,10 @@ export default function GalleryPage() {
             <strong>品質報表</strong>
             <p className="muted">根據「保留 / 唔要」計算保留率，幫你找出最值得重用的風格、衣服、髮型和姿勢。</p>
           </div>
-          <button type="button" onClick={exportQualityReport} disabled={!qualityReport.summary.reviewed}>匯出品質報告</button>
+          <div className="card-actions">
+            <button type="button" onClick={applyRecommendedPreset} disabled={!recommendedPreset}>套用高保留組合到生成</button>
+            <button type="button" onClick={exportQualityReport} disabled={!qualityReport.summary.reviewed}>匯出品質報告</button>
+          </div>
         </div>
         <div className="quality-summary">
           <span>已審稿 {qualityReport.summary.reviewed}</span>
@@ -544,4 +555,55 @@ function buildQualityReport(images: GeneratedImage[]) {
     weakest: [...allItems].sort((a, b) => a.keepRate - b.keepRate || b.reviewed - a.reviewed).slice(0, 6),
     dimensions
   };
+}
+
+function buildRecommendedPreset(
+  images: GeneratedImage[],
+  summary: { reviewed: number; selected: number; keepRate: number }
+): ProductionPreset | null {
+  const selectedImages = images.filter((image) => image.local_status === "selected");
+  if (!selectedImages.length) return null;
+
+  const form = {
+    girlStyle: mostFrequent(selectedImages.map((image) => image.girl_style)),
+    hairStyle: mostFrequent(selectedImages.map((image) => image.hairstyle)),
+    hairColor: mostFrequent(selectedImages.map((image) => image.hair_color)),
+    outfit: mostFrequent(selectedImages.map((image) => image.outfit)),
+    bodyType: mostFrequent(selectedImages.map((image) => image.body_type)),
+    expression: mostFrequent(selectedImages.map((image) => image.expression)),
+    pose: mostFrequent(selectedImages.map((image) => image.pose))
+  };
+
+  const readable = [
+    form.girlStyle && `女仔風格：${label(form.girlStyle)}`,
+    form.outfit && `衣服：${label(form.outfit)}`,
+    form.hairStyle && `髮型：${label(form.hairStyle)}`,
+    form.hairColor && `髮色：${label(form.hairColor)}`,
+    form.expression && `表情：${label(form.expression)}`,
+    form.bodyType && `身材：${label(form.bodyType)}`,
+    form.pose && `姿勢：${label(form.pose)}`
+  ].filter(Boolean).join("、");
+
+  return {
+    name: `高保留率配方 ${new Date().toISOString().slice(0, 10)}`,
+    createdAt: new Date().toISOString(),
+    source: "quality-report",
+    reviewed: summary.reviewed,
+    selected: summary.selected,
+    keepRate: summary.keepRate,
+    form,
+    factory: {
+      seed: `quality-${new Date().toISOString().slice(0, 10)}`,
+      extraPrompt: `Use the proven high-retention combination from the local quality report: ${readable}. Keep each image visually distinct with different framing, lighting, distance, and candid micro-pose.`
+    }
+  };
+}
+
+function mostFrequent(values: Array<string | null | undefined>) {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    if (!value) continue;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
 }

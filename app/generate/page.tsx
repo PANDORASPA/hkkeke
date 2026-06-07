@@ -12,6 +12,7 @@ import {
   POSES
 } from "@/lib/options";
 import { buildPrompt } from "@/lib/prompt";
+import { PRODUCTION_PRESET_KEY, ProductionPreset } from "@/lib/production-preset";
 import {
   buildLocalManifest,
   deleteLocalAsset,
@@ -127,7 +128,7 @@ export default function GeneratePage() {
   const queueSaveChainRef = useRef(Promise.resolve());
 
   useEffect(() => {
-    fetchAssets();
+    void fetchAssets().finally(() => loadPendingProductionPreset());
     restoreQueue();
     loadFactoryRecipes();
   }, []);
@@ -165,6 +166,35 @@ export default function GeneratePage() {
       }
     } catch {
       setFactoryRecipes([]);
+    }
+  }
+
+  function loadPendingProductionPreset() {
+    try {
+      const raw = window.localStorage.getItem(PRODUCTION_PRESET_KEY);
+      if (!raw) return;
+      const preset = JSON.parse(raw) as ProductionPreset;
+      window.localStorage.removeItem(PRODUCTION_PRESET_KEY);
+      setForm((current) => ({
+        ...current,
+        girlStyle: preset.form.girlStyle || current.girlStyle,
+        hairStyle: preset.form.hairStyle || current.hairStyle,
+        hairColor: preset.form.hairColor || current.hairColor,
+        outfit: preset.form.outfit || current.outfit,
+        bodyType: preset.form.bodyType || current.bodyType,
+        expression: preset.form.expression || current.expression,
+        pose: preset.form.pose || current.pose
+      }));
+      setFactory((current) => ({
+        ...current,
+        seed: preset.factory.seed || current.seed,
+        extraPrompt: [preset.factory.extraPrompt, current.extraPrompt].filter((value) => value?.trim()).join("\n")
+      }));
+      setFactoryRecipeName(preset.name);
+      setStatus(`已由品質報表套用高保留率配方：${preset.name}。已審稿 ${preset.reviewed} 張，保留率 ${preset.keepRate}%。`);
+    } catch {
+      window.localStorage.removeItem(PRODUCTION_PRESET_KEY);
+      setStatus("品質報表配方讀取失敗，已清除暫存。");
     }
   }
 
@@ -812,7 +842,7 @@ export default function GeneratePage() {
           <div className="factory-panel">
             <div>
               <strong>批量生產工廠</strong>
-              <p className="muted">用現有場景和設定自動組合大量任務；適合一天 100 張以上的生產流。</p>
+              <p className="muted">用現有場景和設定自動組合大量任務；適合一天 100 張以上的生產流。Gallery 的品質報表可把高保留率組合套用到這裡。</p>
             </div>
             <div className="recipe-tools">
               <label>
