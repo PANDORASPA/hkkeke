@@ -372,6 +372,60 @@ export default function GeneratePage() {
     };
   }, [assets, factory]);
 
+  const factoryPlan = useMemo(() => {
+    const seed = factory.seed.trim() || todaySeed();
+    const scenes = prepareFactoryList(assets.scene, seed, "scene", factory.randomizeCombinations);
+    const girlStyles = prepareFactoryList(GIRL_STYLES, seed, "girl-style", factory.randomizeCombinations);
+    const hairStyles = prepareFactoryList(HAIR_STYLES, seed, "hair-style", factory.randomizeCombinations);
+    const hairColors = prepareFactoryList(HAIR_COLORS, seed, "hair-color", factory.randomizeCombinations);
+    const outfits = prepareFactoryList(OUTFITS, seed, "outfit", factory.randomizeCombinations);
+    const bodyTypes = prepareFactoryList(BODY_TYPES, seed, "body-type", factory.randomizeCombinations);
+    const expressions = prepareFactoryList(EXPRESSIONS, seed, "expression", factory.randomizeCombinations);
+    const poses = prepareFactoryList(POSES, seed, "pose", factory.randomizeCombinations);
+    const targetImages = clampNumber(Number(factory.targetImages), 1, 500);
+    const preferredCount = normalizeCount(Number(factory.imagesPerJob));
+    const sceneCounts = new Map<string, { name: string; images: number; jobs: number }>();
+    const samples: Array<{ index: number; scene: string; girlStyle: string; hairStyle: string; hairColor: string; outfit: string; bodyType: string; expression: string; pose: string; count: number }> = [];
+    let remaining = targetImages;
+    let index = 0;
+
+    while (remaining > 0 && scenes.length) {
+      const count = normalizeCount(Math.min(preferredCount, remaining));
+      const scene = scenes[index % scenes.length];
+      const sceneId = scene.id || scene.google_drive_file_id;
+      const current = sceneCounts.get(sceneId) || { name: assetName(scene), images: 0, jobs: 0 };
+      current.images += count;
+      current.jobs += 1;
+      sceneCounts.set(sceneId, current);
+
+      if (samples.length < 8) {
+        samples.push({
+          index: index + 1,
+          scene: assetName(scene),
+          girlStyle: girlStyles[index % girlStyles.length],
+          hairStyle: hairStyles[(index * 2 + 1) % hairStyles.length],
+          hairColor: hairColors[(index * 3 + 2) % hairColors.length],
+          outfit: outfits[(index * 5 + 1) % outfits.length],
+          bodyType: bodyTypes[(index * 7 + 3) % bodyTypes.length],
+          expression: expressions[(index * 2 + 4) % expressions.length],
+          pose: poses[(index * 3 + 1) % poses.length],
+          count
+        });
+      }
+
+      remaining -= count;
+      index += 1;
+    }
+
+    return {
+      seed,
+      targetImages,
+      jobs: index,
+      sceneCoverage: Array.from(sceneCounts.values()).sort((a, b) => b.images - a.images),
+      samples
+    };
+  }, [assets.scene, factory.imagesPerJob, factory.randomizeCombinations, factory.seed, factory.targetImages]);
+
   function buildPayloadFromAssets(input: {
     scene: DriveAsset;
     girl?: DriveAsset;
@@ -713,6 +767,24 @@ export default function GeneratePage() {
     downloadJson(report, `production-report_${new Date().toISOString().slice(0, 10)}.json`);
   }
 
+  function exportFactoryPlan() {
+    downloadJson({
+      version: 1,
+      exported_at: new Date().toISOString(),
+      settings: {
+        targetImages: factory.targetImages,
+        imagesPerJob: factory.imagesPerJob,
+        queueDelaySeconds: factory.queueDelaySeconds,
+        maxRetries: factory.maxRetries,
+        seed: factoryPlan.seed,
+        useReferenceAssets: factory.useReferenceAssets,
+        randomizeCombinations: factory.randomizeCombinations
+      },
+      readiness: factoryReadiness,
+      plan: factoryPlan
+    }, `production-plan_${new Date().toISOString().slice(0, 10)}.json`);
+  }
+
   function clearFinishedQueueJobs() {
     updateQueue((current) => current.filter((item) => item.status !== "done"));
   }
@@ -909,6 +981,43 @@ export default function GeneratePage() {
                   {factoryReadiness.strengths.map((item) => <span key={item}>{item}</span>)}
                 </div>
               ) : null}
+            </div>
+            <div className="production-plan">
+              <div className="readiness-heading">
+                <strong>生產計劃</strong>
+                <span>Seed：{factoryPlan.seed} / {factoryPlan.jobs} 個任務</span>
+              </div>
+              <div className="plan-grid">
+                <div>
+                  <strong>場景覆蓋</strong>
+                  {factoryPlan.sceneCoverage.length ? (
+                    <div className="plan-list">
+                      {factoryPlan.sceneCoverage.slice(0, 6).map((scene) => (
+                        <span key={scene.name}>{scene.name}：{scene.images} 張 / {scene.jobs} 任務</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="muted">未有場景可計劃。</p>
+                  )}
+                </div>
+                <div>
+                  <strong>前 8 個任務樣本</strong>
+                  {factoryPlan.samples.length ? (
+                    <div className="plan-list">
+                      {factoryPlan.samples.map((sample) => (
+                        <span key={sample.index}>
+                          #{sample.index} {sample.scene} / {label(sample.girlStyle)} / {label(sample.outfit)} / {label(sample.pose)} / {sample.count} 張
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="muted">未有任務樣本。</p>
+                  )}
+                </div>
+              </div>
+              <div className="card-actions">
+                <button type="button" onClick={exportFactoryPlan} disabled={!factoryPlan.jobs}>匯出生產計劃</button>
+              </div>
             </div>
             <div className="recipe-tools">
               <label>

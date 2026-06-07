@@ -565,6 +565,50 @@ label {
   background: #fff1f0;
 }
 
+.production-plan {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.plan-grid > div {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.plan-grid > div > strong {
+  font-size: 13px;
+}
+
+.plan-list {
+  display: grid;
+  gap: 6px;
+  max-height: 190px;
+  overflow: auto;
+}
+
+.plan-list span {
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .check-row {
   display: flex;
   align-items: center;
@@ -849,6 +893,10 @@ pre {
 
   .readiness-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .plan-grid {
+    grid-template-columns: 1fr;
   }
 
   .queue-item {
