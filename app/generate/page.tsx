@@ -101,6 +101,39 @@ const issueAvoidanceOptions = [
   }
 ];
 
+const productionScalePresets = [
+  {
+    id: "pilot",
+    label: "24 張試產",
+    description: "先試今日素材質素",
+    targetImages: "24",
+    imagesPerJob: "4",
+    queueDelaySeconds: "8",
+    maxRetries: "1",
+    issueFixes: ["hands", "face", "background", "style", "duplicate"]
+  },
+  {
+    id: "daily-100",
+    label: "100 張日產",
+    description: "每日穩定生產用",
+    targetImages: "100",
+    imagesPerJob: "4",
+    queueDelaySeconds: "12",
+    maxRetries: "2",
+    issueFixes: ["hands", "face", "background", "style", "outfit", "duplicate"]
+  },
+  {
+    id: "high-volume",
+    label: "200 張高量",
+    description: "素材足夠時分批跑",
+    targetImages: "200",
+    imagesPerJob: "4",
+    queueDelaySeconds: "15",
+    maxRetries: "2",
+    issueFixes: ["hands", "face", "background", "style", "outfit", "duplicate"]
+  }
+];
+
 const emptyAssets: AssetsByCategory = {
   scene: [],
   girl: [],
@@ -259,6 +292,23 @@ export default function GeneratePage() {
     setFactory(normalizeFactorySettings(recipe.settings));
     setFactoryRecipeName(recipe.name);
     setStatus(`已套用批量生產配方：${recipe.name}`);
+  }
+
+  function applyProductionScalePreset(presetId: string) {
+    const preset = productionScalePresets.find((item) => item.id === presetId);
+    if (!preset) return;
+    setFactory((current) => ({
+      ...current,
+      targetImages: preset.targetImages,
+      imagesPerJob: preset.imagesPerJob,
+      queueDelaySeconds: preset.queueDelaySeconds,
+      maxRetries: preset.maxRetries,
+      issueFixes: preset.issueFixes,
+      useReferenceAssets: true,
+      randomizeCombinations: true,
+      seed: current.seed || todaySeed()
+    }));
+    setStatus(`已套用生產規模：${preset.label}。可先看生產計劃，再建立並開始。`);
   }
 
   function deleteFactoryRecipe(id: string) {
@@ -1093,6 +1143,19 @@ export default function GeneratePage() {
               >
                 刪除目前配方
               </button>
+            </div>
+            <div className="scale-preset-grid">
+              {productionScalePresets.map((preset) => (
+                <button
+                  type="button"
+                  className="scale-preset"
+                  onClick={() => applyProductionScalePreset(preset.id)}
+                  key={preset.id}
+                >
+                  <strong>{preset.label}</strong>
+                  <span>{preset.description}</span>
+                </button>
+              ))}
             </div>
             <div className="controls-grid">
               <label>

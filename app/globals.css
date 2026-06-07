@@ -551,6 +551,30 @@ label {
   background: var(--panel);
 }
 
+.scale-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.scale-preset {
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  padding: 12px;
+  text-align: left;
+}
+
+.scale-preset strong {
+  font-size: 14px;
+}
+
+.scale-preset span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .issue-fix-panel {
   display: grid;
   gap: 8px;
@@ -948,6 +972,7 @@ pre {
   .result-grid,
   .controls-grid,
   .issue-fix-grid,
+  .scale-preset-grid,
   .manifest-tools,
   .recipe-tools,
   .local-uploader {
