@@ -40,6 +40,7 @@ export type GeneratedImage = {
   created_at: string;
   batch_id?: string | null;
   local_status?: "new" | "selected" | "rejected";
+  review_tags?: string[];
   source?: "supabase" | "local";
 };
 

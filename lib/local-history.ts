@@ -188,6 +188,22 @@ export async function updateLocalImagesStatus(ids: string[], status: LocalGenera
   db.close();
 }
 
+export async function updateLocalImageReviewTags(id: string, tags: string[]) {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(IMAGE_STORE, "readwrite");
+    const store = tx.objectStore(IMAGE_STORE);
+    const request = store.get(id);
+    request.onsuccess = () => {
+      const image = request.result as LocalGeneratedImage | undefined;
+      if (image) store.put({ ...image, review_tags: Array.from(new Set(tags)) });
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("更新審稿標籤失敗。"));
+  });
+  db.close();
+}
+
 export async function deleteLocalImage(id: string) {
   await deleteLocalImages([id]);
 }
@@ -360,6 +376,7 @@ function normalizeImage(image: LocalGeneratedImage): LocalGeneratedImage {
     id: image.id || `imported-image-${Date.now()}-${crypto.randomUUID()}`,
     batch_id: image.batch_id || "imported",
     local_status: image.local_status || "new",
+    review_tags: Array.isArray(image.review_tags) ? image.review_tags : [],
     source: "local",
     created_at: image.created_at || new Date().toISOString()
   };

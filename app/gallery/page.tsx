@@ -10,6 +10,7 @@ import {
   loadLocalImages,
   LocalBatch,
   updateLocalImageStatus,
+  updateLocalImageReviewTags,
   updateLocalImagesStatus
 } from "@/lib/local-history";
 import { OPTION_LABELS } from "@/lib/options";
@@ -28,6 +29,17 @@ const qualityFields: Array<{ field: QualityField; label: string }> = [
   { field: "expression", label: "表情" },
   { field: "body_type", label: "身材" },
   { field: "pose", label: "姿勢" }
+];
+
+const reviewTags = [
+  { value: "hands", label: "手部問題" },
+  { value: "face", label: "臉部崩壞" },
+  { value: "background", label: "背景不真實" },
+  { value: "style", label: "風格唔啱" },
+  { value: "outfit", label: "衣服唔啱" },
+  { value: "hair", label: "髮型唔啱" },
+  { value: "duplicate", label: "太重複" },
+  { value: "approved-commercial", label: "可商用" }
 ];
 
 export default function GalleryPage() {
@@ -79,6 +91,19 @@ export default function GalleryPage() {
     );
   }
 
+  async function toggleReviewTag(id: string, tag: string) {
+    const image = localImages.find((item) => item.id === id);
+    if (!image) return;
+    const currentTags = image.review_tags || [];
+    const nextTags = currentTags.includes(tag)
+      ? currentTags.filter((item) => item !== tag)
+      : [...currentTags, tag];
+    await updateLocalImageReviewTags(id, nextTags);
+    setLocalImages((current) =>
+      current.map((item) => item.id === id ? { ...item, review_tags: nextTags } : item)
+    );
+  }
+
   async function removeImage(id: string) {
     await deleteLocalImage(id);
     setLocalImages((current) => current.filter((image) => image.id !== id));
@@ -120,6 +145,7 @@ export default function GalleryPage() {
       summary: qualityReport.summary,
       best: qualityReport.best,
       weakest: qualityReport.weakest,
+      issues: qualityReport.issues,
       dimensions: qualityReport.dimensions
     }, `quality-report_${new Date().toISOString().slice(0, 10)}.json`);
   }
@@ -338,6 +364,21 @@ export default function GalleryPage() {
             </div>
           </div>
         )}
+        <div className="issue-panel">
+          <strong>常見問題</strong>
+          {qualityReport.issues.length ? (
+            <div className="issue-list">
+              {qualityReport.issues.map((issue) => (
+                <button type="button" key={issue.value} onClick={() => focusQuality(issue.value)}>
+                  <span>{issue.label}</span>
+                  <strong>{issue.count}</strong>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">未有問題標籤。審稿時可在圖片卡片標記手部、臉部、背景、重複等原因。</p>
+          )}
+        </div>
       </section>
 
       <section className="batch-panel">
@@ -425,6 +466,20 @@ export default function GalleryPage() {
                 姿勢：{label(image.pose)}<br />
                 建立時間：{new Date(image.created_at).toLocaleString("zh-HK")}
               </span>
+              {image.source === "local" ? (
+                <div className="review-tags">
+                  {reviewTags.map((tag) => (
+                    <button
+                      type="button"
+                      className={image.review_tags?.includes(tag.value) ? "active" : ""}
+                      key={tag.value}
+                      onClick={() => toggleReviewTag(image.id, tag.value)}
+                    >
+                      {tag.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <div className="card-actions">
                 {image.source === "local" ? (
                   <>
@@ -496,7 +551,9 @@ function matchesSearch(image: GeneratedImage, search: string) {
     image.outfit,
     image.expression,
     image.body_type,
-    image.pose
+    image.pose,
+    ...(image.review_tags || []),
+    ...(image.review_tags || []).map(reviewTagLabel)
   ].some((value) => String(value || "").toLowerCase().includes(keyword));
 }
 
@@ -553,8 +610,26 @@ function buildQualityReport(images: GeneratedImage[]) {
     },
     best: [...allItems].sort((a, b) => b.keepRate - a.keepRate || b.reviewed - a.reviewed).slice(0, 6),
     weakest: [...allItems].sort((a, b) => a.keepRate - b.keepRate || b.reviewed - a.reviewed).slice(0, 6),
+    issues: buildIssueReport(images),
     dimensions
   };
+}
+
+function buildIssueReport(images: GeneratedImage[]) {
+  const counts = new Map<string, number>();
+  for (const image of images) {
+    for (const tag of image.review_tags || []) {
+      counts.set(tag, (counts.get(tag) || 0) + 1);
+    }
+  }
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({ value, label: reviewTagLabel(value), count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+}
+
+function reviewTagLabel(value: string) {
+  return reviewTags.find((tag) => tag.value === value)?.label || value;
 }
 
 function buildRecommendedPreset(
