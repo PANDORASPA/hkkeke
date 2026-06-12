@@ -11,6 +11,7 @@ import {
 import { listDriveAssets } from "@/lib/google-drive";
 import { verifyGitHubOidcToken } from "@/lib/github-oidc";
 import { generateImagesFromPayload } from "@/lib/server-generation";
+import { setAppSetting } from "@/lib/app-settings";
 import { AssetCategory, DriveAsset, GeneratePayload } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -28,14 +29,28 @@ export async function POST(request: NextRequest) {
 }
 
 async function runAutomatedProduction(request: NextRequest) {
+  let runId = "";
+  let authMode = "";
+  let targetImages = 0;
+  let seed = "";
   try {
-    const authMode = await authorizeCronRequest(request);
+    authMode = await authorizeCronRequest(request);
     const url = new URL(request.url);
     const requestedTarget = Number(url.searchParams.get("target") || process.env.DAILY_AUTO_IMAGES_PER_RUN || "5");
-    const targetImages = clamp(requestedTarget, 1, 12);
-    const seed = url.searchParams.get("seed") || process.env.DAILY_AUTO_SEED || dailySeed();
+    targetImages = clamp(requestedTarget, 1, 12);
+    seed = url.searchParams.get("seed") || process.env.DAILY_AUTO_SEED || dailySeed();
     const includeReferences = (url.searchParams.get("references") || process.env.DAILY_AUTO_USE_REFERENCES || "true") !== "false";
     const maxJobs = Math.ceil(targetImages / 4);
+    runId = `auto-${Date.now()}`;
+
+    await recordProductionRun({
+      id: runId,
+      status: "running",
+      authMode,
+      seed,
+      targetImages,
+      startedAt: new Date().toISOString()
+    });
 
     const assets = groupAssets(await listDriveAssets());
     if (!assets.scene.length) {
@@ -60,6 +75,18 @@ async function runAutomatedProduction(request: NextRequest) {
       });
     }
 
+    await recordProductionRun({
+      id: runId,
+      status: "success",
+      authMode,
+      seed,
+      targetImages,
+      generatedCount,
+      jobs: batches.length,
+      warnings: Array.from(warnings),
+      finishedAt: new Date().toISOString()
+    });
+
     return NextResponse.json({
       ok: true,
       mode: "server-cron-production",
@@ -72,10 +99,29 @@ async function runAutomatedProduction(request: NextRequest) {
       warnings: Array.from(warnings)
     });
   } catch (error) {
+    if (runId) {
+      await recordProductionRun({
+        id: runId,
+        status: "failed",
+        authMode,
+        seed,
+        targetImages,
+        finishedAt: new Date().toISOString(),
+        error: error instanceof Error ? error.message : "自動生產失敗。"
+      });
+    }
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "自動生產失敗。" },
       { status: 500 }
     );
+  }
+}
+
+async function recordProductionRun(value: Record<string, unknown>) {
+  try {
+    await setAppSetting("AUTO_PRODUCTION_LAST_RUN", JSON.stringify(value));
+  } catch {
+    // Logging should never stop image production.
   }
 }
 

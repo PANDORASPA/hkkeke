@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
-import { formatAppSettingsError, getOpenAIKeyWithSource } from "@/lib/app-settings";
+import { formatAppSettingsError, getAppSetting, getOpenAIKeyWithSource } from "@/lib/app-settings";
 import { DRIVE_FOLDERS, driveFetch } from "@/lib/google-drive";
 import { OPENAI_IMAGE_MODEL, testOpenAIKey } from "@/lib/openai";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -69,6 +69,13 @@ export async function GET() {
   };
 
   try {
+    const lastRun = await getAppSetting("AUTO_PRODUCTION_LAST_RUN");
+    if (lastRun) result.automation.lastRun = JSON.parse(lastRun);
+  } catch {
+    result.automation.lastRun = null;
+  }
+
+  try {
     if (missingSupabase.length) {
       throw new Error(`Missing Supabase environment variables: ${missingSupabase.join(", ")}.`);
     }
@@ -132,6 +139,7 @@ function buildAutomationStatus() {
     githubOidc: oidcWorkflow ? "set" : "missing",
     targetPerRun: String(safeTarget),
     estimatedDailyImages: workflowExists && hourlyWorkflow ? String(safeTarget * 24) : String(safeTarget),
-    route: "/api/auto-production"
+    route: "/api/auto-production",
+    lastRun: null as unknown
   };
 }

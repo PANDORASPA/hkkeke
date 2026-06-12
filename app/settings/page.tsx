@@ -17,6 +17,7 @@ type AutomationStatus = {
   targetPerRun: string;
   estimatedDailyImages: string;
   route: string;
+  lastRun?: Record<string, unknown> | null;
 };
 
 type Health = {
@@ -172,6 +173,12 @@ export default function SettingsPage() {
                 Vercel Hobby 只支援每日 Cron；每小時生產由 GitHub Actions 執行。GitHub Actions 會用 OIDC
                 短期身份 token 觸發自動生產，不需要額外設定 repository secret。
               </p>
+              <h3>最後一次自動生產</h3>
+              {health.automation.lastRun ? (
+                <pre>{JSON.stringify(health.automation.lastRun, null, 2)}</pre>
+              ) : (
+                <p className="muted">未有自動生產紀錄。等下一個整點，或到 GitHub Actions 手動 Run workflow 測試。</p>
+              )}
             </div>
           ) : (
             <p className="muted">測試連接後會顯示自動生產狀態。</p>
