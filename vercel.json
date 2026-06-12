@@ -22,7 +22,7 @@
   "crons": [
     {
       "path": "/api/auto-production",
-      "schedule": "0 * * * *"
+      "schedule": "0 2 * * *"
     }
   ]
 }

@@ -1,0 +1,30 @@
+name: Auto Production
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Images to generate in this run"
+        required: false
+        default: "5"
+
+jobs:
+  produce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Trigger AI Girl Generator production
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          TARGET: ${{ github.event.inputs.target || '5' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "Missing GitHub secret CRON_SECRET"
+            exit 1
+          fi
+
+          curl --fail-with-body --show-error --silent \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://hkkeke.vercel.app/api/auto-production?target=$TARGET"
