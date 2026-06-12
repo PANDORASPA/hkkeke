@@ -59,6 +59,8 @@ Google Drive 素材庫
 - 成功生成後會上傳到 `06_Generated_成品`，並寫入 Supabase `generated_images`。
 - 需要設定 `CRON_SECRET`。Vercel Cron 會用 `Authorization: Bearer $CRON_SECRET` 呼叫；手動測試亦可用 `?secret=...`。
 - 如果生成或 Drive 上傳太慢，可把 `DAILY_AUTO_IMAGES_PER_RUN` 改成 `2`、`3` 或 `4`。
+- 因 Vercel Hobby 只支援每日 Cron，本 repo 另有 GitHub Actions workflow：`.github/workflows/auto-production.yml`，每小時呼叫一次 `/api/auto-production`。
+- 要啟用 GitHub Actions 小時級自動生產，請在 GitHub repo `Settings -> Secrets and variables -> Actions` 新增同名 secret：`CRON_SECRET`，值必須和 Vercel 的 `CRON_SECRET` 一樣。
 
 手動測試：
 
