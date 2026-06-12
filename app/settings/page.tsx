@@ -13,6 +13,7 @@ type AutomationStatus = {
   cronSecret: string;
   vercelDailyCron: string;
   githubHourlyWorkflow: string;
+  githubActionsSecret: string;
   targetPerRun: string;
   estimatedDailyImages: string;
   route: string;
@@ -162,6 +163,7 @@ export default function SettingsPage() {
                   cronSecret: health.automation.cronSecret,
                   vercelDailyCron: health.automation.vercelDailyCron,
                   githubHourlyWorkflow: health.automation.githubHourlyWorkflow,
+                  githubActionsSecret: health.automation.githubActionsSecret,
                   targetPerRun: health.automation.targetPerRun,
                   estimatedDailyImages: health.automation.estimatedDailyImages
                 }}

@@ -117,15 +117,16 @@ function buildAutomationStatus() {
   const safeTarget = Number.isFinite(targetPerRun) ? targetPerRun : 5;
 
   return {
-    ok: cronSecretSet && workflowExists && hourlyWorkflow,
+    ok: cronSecretSet,
     message: cronSecretSet
-      ? "自動生產 route 已受 CRON_SECRET 保護。GitHub Actions secret 需要同名同值。"
+      ? "Vercel 端自動生產 route 已受 CRON_SECRET 保護。GitHub Actions 小時級生產仍需確認 repo secret。"
       : "未設定 CRON_SECRET，自動生產不會執行。",
     cronSecret: cronSecretSet ? "set" : "missing",
     vercelDailyCron: "set",
     githubHourlyWorkflow: workflowExists && hourlyWorkflow ? "set" : "missing",
+    githubActionsSecret: "需要在 GitHub repo 手動確認",
     targetPerRun: String(safeTarget),
-    estimatedDailyImages: String(safeTarget * 24),
+    estimatedDailyImages: workflowExists && hourlyWorkflow ? `${safeTarget * 24}（GitHub secret 設好後）` : String(safeTarget),
     route: "/api/auto-production"
   };
 }
