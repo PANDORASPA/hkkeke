@@ -61,6 +61,8 @@ export async function GET() {
       openaiSource: "checking",
       openaiModel: OPENAI_IMAGE_MODEL,
       cronSecret: process.env.CRON_SECRET ? "set" : "missing",
+      githubOidcAudience: process.env.GITHUB_OIDC_AUDIENCE || "hkkeke-auto-production",
+      githubOidcRepository: process.env.GITHUB_OIDC_REPOSITORY || "PANDORASPA/hkkeke",
       dailyAutoImagesPerRun: process.env.DAILY_AUTO_IMAGES_PER_RUN || "5",
       dailyAutoUseReferences: process.env.DAILY_AUTO_USE_REFERENCES || "true"
     }
@@ -113,20 +115,23 @@ function buildAutomationStatus() {
   const workflowExists = existsSync(workflowPath);
   const workflowText = workflowExists ? readFileSync(workflowPath, "utf8") : "";
   const hourlyWorkflow = workflowText.includes("cron: \"0 * * * *\"");
+  const oidcWorkflow = workflowText.includes("id-token: write") && workflowText.includes("ACTIONS_ID_TOKEN_REQUEST_URL");
   const targetPerRun = Number(process.env.DAILY_AUTO_IMAGES_PER_RUN || "5");
   const safeTarget = Number.isFinite(targetPerRun) ? targetPerRun : 5;
 
   return {
-    ok: cronSecretSet,
-    message: cronSecretSet
-      ? "Vercel 端自動生產 route 已受 CRON_SECRET 保護。GitHub Actions 小時級生產仍需確認 repo secret。"
-      : "未設定 CRON_SECRET，自動生產不會執行。",
+    ok: (cronSecretSet || oidcWorkflow) && workflowExists && hourlyWorkflow,
+    message: oidcWorkflow
+      ? "GitHub Actions OIDC 小時級自動生產已啟用，不需要 GitHub repository secret。"
+      : cronSecretSet
+        ? "Vercel 端自動生產 route 已受 CRON_SECRET 保護。"
+        : "未設定 CRON_SECRET，亦未啟用 GitHub OIDC，自動生產不會執行。",
     cronSecret: cronSecretSet ? "set" : "missing",
     vercelDailyCron: "set",
     githubHourlyWorkflow: workflowExists && hourlyWorkflow ? "set" : "missing",
-    githubActionsSecret: "需要在 GitHub repo 手動確認",
+    githubOidc: oidcWorkflow ? "set" : "missing",
     targetPerRun: String(safeTarget),
-    estimatedDailyImages: workflowExists && hourlyWorkflow ? `${safeTarget * 24}（GitHub secret 設好後）` : String(safeTarget),
+    estimatedDailyImages: workflowExists && hourlyWorkflow ? String(safeTarget * 24) : String(safeTarget),
     route: "/api/auto-production"
   };
 }

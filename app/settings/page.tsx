@@ -13,7 +13,7 @@ type AutomationStatus = {
   cronSecret: string;
   vercelDailyCron: string;
   githubHourlyWorkflow: string;
-  githubActionsSecret: string;
+  githubOidc: string;
   targetPerRun: string;
   estimatedDailyImages: string;
   route: string;
@@ -163,14 +163,14 @@ export default function SettingsPage() {
                   cronSecret: health.automation.cronSecret,
                   vercelDailyCron: health.automation.vercelDailyCron,
                   githubHourlyWorkflow: health.automation.githubHourlyWorkflow,
-                  githubActionsSecret: health.automation.githubActionsSecret,
+                  githubOidc: health.automation.githubOidc,
                   targetPerRun: health.automation.targetPerRun,
                   estimatedDailyImages: health.automation.estimatedDailyImages
                 }}
               />
               <p className="muted">
-                Vercel Hobby 只支援每日 Cron；每小時生產由 GitHub Actions 執行。GitHub repo 需要新增同名
-                <code>CRON_SECRET</code>，值要和 Vercel 的 <code>CRON_SECRET</code> 一樣。
+                Vercel Hobby 只支援每日 Cron；每小時生產由 GitHub Actions 執行。GitHub Actions 會用 OIDC
+                短期身份 token 觸發自動生產，不需要額外設定 repository secret。
               </p>
             </div>
           ) : (

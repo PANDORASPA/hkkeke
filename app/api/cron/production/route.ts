@@ -9,6 +9,7 @@ import {
   POSES
 } from "@/lib/options";
 import { listDriveAssets } from "@/lib/google-drive";
+import { verifyGitHubOidcToken } from "@/lib/github-oidc";
 import { generateImagesFromPayload } from "@/lib/server-generation";
 import { AssetCategory, DriveAsset, GeneratePayload } from "@/lib/types";
 
@@ -28,8 +29,7 @@ export async function POST(request: NextRequest) {
 
 async function runAutomatedProduction(request: NextRequest) {
   try {
-    authorizeCronRequest(request);
-
+    const authMode = await authorizeCronRequest(request);
     const url = new URL(request.url);
     const requestedTarget = Number(url.searchParams.get("target") || process.env.DAILY_AUTO_IMAGES_PER_RUN || "5");
     const targetImages = clamp(requestedTarget, 1, 12);
@@ -63,6 +63,7 @@ async function runAutomatedProduction(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       mode: "server-cron-production",
+      authMode,
       seed,
       targetImages,
       generatedCount,
@@ -78,16 +79,24 @@ async function runAutomatedProduction(request: NextRequest) {
   }
 }
 
-function authorizeCronRequest(request: NextRequest) {
+async function authorizeCronRequest(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    throw new Error("未設定 CRON_SECRET，為安全起見不會執行自動生產。");
-  }
   const auth = request.headers.get("authorization") || "";
   const querySecret = new URL(request.url).searchParams.get("secret") || "";
-  if (auth !== `Bearer ${secret}` && querySecret !== secret) {
-    throw new Error("沒有權限執行自動生產。");
+
+  if (secret && (auth === `Bearer ${secret}` || querySecret === secret)) {
+    return "cron-secret";
   }
+
+  if (auth.startsWith("Bearer ")) {
+    await verifyGitHubOidcToken(auth.slice("Bearer ".length));
+    return "github-oidc";
+  }
+
+  if (!secret) {
+    throw new Error("未設定 CRON_SECRET，亦沒有有效 GitHub OIDC token；為安全起見不會執行自動生產。");
+  }
+  throw new Error("沒有權限執行自動生產。");
 }
 
 function buildProductionPayloads(input: {
