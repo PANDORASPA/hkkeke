@@ -49,6 +49,23 @@ Google Drive 素材庫
 
 批量工廠會自動輪流組合不同場景、女仔風格、髮型、髮色、衣服、身材、表情和姿勢。若素材庫有女仔/衣服/髮型/姿勢參考圖，亦可以勾選使用參考素材。
 
+## 無人值守自動生產
+
+專案已加入 Vercel Cron route：`/api/cron/production`。
+
+- `vercel.json` 預設每小時呼叫一次。
+- `DAILY_AUTO_IMAGES_PER_RUN=5` 時，每日理論產量約 120 張。
+- 每次執行會讀取 Google Drive 素材，自動抽場景、女仔參考、衣服、髮型、姿勢和 prompt 選項。
+- 成功生成後會上傳到 `06_Generated_成品`，並寫入 Supabase `generated_images`。
+- 需要設定 `CRON_SECRET`。Vercel Cron 會用 `Authorization: Bearer $CRON_SECRET` 呼叫；手動測試亦可用 `?secret=...`。
+- 如果生成或 Drive 上傳太慢，可把 `DAILY_AUTO_IMAGES_PER_RUN` 改成 `2`、`3` 或 `4`。
+
+手動測試：
+
+```text
+https://你的網域/api/cron/production?secret=你的_CRON_SECRET&target=1
+```
+
 ## 相似場景
 
 場景不足時，可以先選一張場景，再按「按目前場景生成相似場景」。
@@ -141,4 +158,9 @@ GOOGLE_DRIVE_OUTFITS_FOLDER_ID=
 GOOGLE_DRIVE_HAIR_FOLDER_ID=
 GOOGLE_DRIVE_POSES_FOLDER_ID=
 GOOGLE_DRIVE_GENERATED_FOLDER_ID=
+
+CRON_SECRET=
+DAILY_AUTO_IMAGES_PER_RUN=5
+DAILY_AUTO_USE_REFERENCES=true
+DAILY_AUTO_SEED=
 ```

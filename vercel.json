@@ -14,6 +14,15 @@
     },
     "app/api/drive/upload-generated/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/cron/production/route.ts": {
+      "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/production",
+      "schedule": "0 * * * *"
+    }
+  ]
 }
