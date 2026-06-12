@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { NextResponse } from "next/server";
 import { formatAppSettingsError, getOpenAIKeyWithSource } from "@/lib/app-settings";
 import { DRIVE_FOLDERS, driveFetch } from "@/lib/google-drive";
@@ -49,6 +51,7 @@ export async function GET() {
     supabase: { ok: false, message: "" },
     googleDrive: { ok: false, message: "" },
     openai: { ok: false, message: "" },
+    automation: buildAutomationStatus(),
     folders: folderStatus(),
     env: {
       supabase: missingSupabase.length ? `Missing: ${missingSupabase.join(", ")}` : "set",
@@ -56,7 +59,10 @@ export async function GET() {
       driveFolders: missingFolders.length ? `Missing: ${missingFolders.join(", ")}` : "set",
       openai: "checking",
       openaiSource: "checking",
-      openaiModel: OPENAI_IMAGE_MODEL
+      openaiModel: OPENAI_IMAGE_MODEL,
+      cronSecret: process.env.CRON_SECRET ? "set" : "missing",
+      dailyAutoImagesPerRun: process.env.DAILY_AUTO_IMAGES_PER_RUN || "5",
+      dailyAutoUseReferences: process.env.DAILY_AUTO_USE_REFERENCES || "true"
     }
   };
 
@@ -99,4 +105,27 @@ export async function GET() {
   }
 
   return NextResponse.json(result);
+}
+
+function buildAutomationStatus() {
+  const cronSecretSet = Boolean(process.env.CRON_SECRET);
+  const workflowPath = join(process.cwd(), ".github", "workflows", "auto-production.yml");
+  const workflowExists = existsSync(workflowPath);
+  const workflowText = workflowExists ? readFileSync(workflowPath, "utf8") : "";
+  const hourlyWorkflow = workflowText.includes("cron: \"0 * * * *\"");
+  const targetPerRun = Number(process.env.DAILY_AUTO_IMAGES_PER_RUN || "5");
+  const safeTarget = Number.isFinite(targetPerRun) ? targetPerRun : 5;
+
+  return {
+    ok: cronSecretSet && workflowExists && hourlyWorkflow,
+    message: cronSecretSet
+      ? "自動生產 route 已受 CRON_SECRET 保護。GitHub Actions secret 需要同名同值。"
+      : "未設定 CRON_SECRET，自動生產不會執行。",
+    cronSecret: cronSecretSet ? "set" : "missing",
+    vercelDailyCron: "set",
+    githubHourlyWorkflow: workflowExists && hourlyWorkflow ? "set" : "missing",
+    targetPerRun: String(safeTarget),
+    estimatedDailyImages: String(safeTarget * 24),
+    route: "/api/auto-production"
+  };
 }

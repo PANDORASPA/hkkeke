@@ -2,10 +2,27 @@
 
 import { useEffect, useState } from "react";
 
+type HealthItem = {
+  ok: boolean;
+  message: string;
+};
+
+type AutomationStatus = {
+  ok: boolean;
+  message: string;
+  cronSecret: string;
+  vercelDailyCron: string;
+  githubHourlyWorkflow: string;
+  targetPerRun: string;
+  estimatedDailyImages: string;
+  route: string;
+};
+
 type Health = {
-  supabase: { ok: boolean; message: string };
-  googleDrive: { ok: boolean; message: string };
-  openai: { ok: boolean; message: string };
+  supabase: HealthItem;
+  googleDrive: HealthItem;
+  openai: HealthItem;
+  automation: AutomationStatus;
   folders: Record<string, string>;
   env: Record<string, string>;
 };
@@ -26,6 +43,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     fetchOpenAIKeyStatus();
+    testConnections();
   }, []);
 
   async function fetchOpenAIKeyStatus() {
@@ -78,8 +96,7 @@ export default function SettingsPage() {
         <div>
           <h1>設定</h1>
           <p className="muted">
-            Supabase 和 Google Drive 使用 Vercel server-side env；OpenAI API key 可以在這裡輸入。
-            如果 Supabase 暫停，系統會先用本機瀏覽器 httpOnly cookie 保存 OpenAI key。
+            Supabase、Google Drive、自動生產使用 Vercel server-side env；OpenAI API key 可以在這裡輸入。
           </p>
         </div>
         <button className="primary" onClick={testConnections} disabled={loading}>
@@ -92,7 +109,6 @@ export default function SettingsPage() {
           <h2>OpenAI API Key</h2>
           <p className="muted">
             這裡只保存 key，不會顯示完整內容。測試會檢查 <code>gpt-image-1.5</code> 圖片模型是否可用。
-            如果出現 HTTP 403，通常是 Project 權限、restricted key 權限，或 Organization Verification 未完成。
           </p>
           <p className={`status ${keyStatus?.configured ? "ok" : "error"}`}>
             <strong>狀態</strong><br />
@@ -133,14 +149,42 @@ export default function SettingsPage() {
         </div>
 
         <div className="panel">
+          <h2>自動生產</h2>
+          {health ? (
+            <div>
+              <p className={`status ${health.automation.ok ? "ok" : "error"}`}>
+                <strong>{health.automation.ok ? "已準備" : "需要設定"}</strong><br />
+                {health.automation.message}
+              </p>
+              <StatusList
+                items={{
+                  route: health.automation.route,
+                  cronSecret: health.automation.cronSecret,
+                  vercelDailyCron: health.automation.vercelDailyCron,
+                  githubHourlyWorkflow: health.automation.githubHourlyWorkflow,
+                  targetPerRun: health.automation.targetPerRun,
+                  estimatedDailyImages: health.automation.estimatedDailyImages
+                }}
+              />
+              <p className="muted">
+                Vercel Hobby 只支援每日 Cron；每小時生產由 GitHub Actions 執行。GitHub repo 需要新增同名
+                <code>CRON_SECRET</code>，值要和 Vercel 的 <code>CRON_SECRET</code> 一樣。
+              </p>
+            </div>
+          ) : (
+            <p className="muted">測試連接後會顯示自動生產狀態。</p>
+          )}
+        </div>
+
+        <div className="panel">
           <h2>正確使用方法</h2>
           <ol className="checklist">
             <li>把場景圖片放到 <code>01_Scenes_場景</code> 或其子資料夾。</li>
             <li>把女仔參考、衣服、髮型、姿勢圖片放到對應資料夾。</li>
             <li>到「生成圖片」頁按「同步 Google Drive 素材」。</li>
-            <li>最少選一張場景圖；其他參考圖可選可不選。</li>
+            <li>至少選一張場景圖；其他參考圖可選可不選。</li>
             <li>設定風格、髮型、衣服、表情、身材、姿勢，再生成或加入列隊。</li>
-            <li>生成結果會自動保存到本機 Gallery；如 Google Drive 可寫入，亦會上傳到成品資料夾。</li>
+            <li>如果 Drive 上傳失敗，可在生成結果按「補傳 Drive」。</li>
           </ol>
         </div>
 
@@ -154,7 +198,7 @@ export default function SettingsPage() {
 05_Poses_姿勢/
 06_Generated_成品/`}</pre>
           <p className="muted">
-            目前 app 會讀取每個主要資料夾和下一層子資料夾內的圖片。子資料夾名稱會當作素材分類，方便之後篩選和整理。
+            App 會讀取每個主要資料夾和下一層子資料夾的圖片。子資料夾名稱會當作素材分類，方便之後篩選和整理。
           </p>
         </div>
       </section>
@@ -168,14 +212,16 @@ function StatusList(props: { items: Record<string, string> }) {
       {Object.entries(props.items).map(([key, value]) => (
         <div key={key}>
           <code>{key}</code>
-          <span className={value === "set" ? "ok-text" : "error-text"}>{value}</span>
+          <span className={value === "set" ? "ok-text" : value === "missing" || value.startsWith("Missing") ? "error-text" : ""}>
+            {value}
+          </span>
         </div>
       ))}
     </div>
   );
 }
 
-function HealthCard(props: { title: string; item: { ok: boolean; message: string } }) {
+function HealthCard(props: { title: string; item: HealthItem }) {
   return (
     <p className={`status ${props.item.ok ? "ok" : "error"}`}>
       <strong>{props.title}</strong><br />
