@@ -15,13 +15,13 @@
     "app/api/drive/upload-generated/route.ts": {
       "maxDuration": 30
     },
-    "app/api/cron/production/route.ts": {
+    "app/api/auto-production/route.ts": {
       "maxDuration": 300
     }
   },
   "crons": [
     {
-      "path": "/api/cron/production",
+      "path": "/api/auto-production",
       "schedule": "0 * * * *"
     }
   ]

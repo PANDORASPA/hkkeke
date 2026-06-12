@@ -51,7 +51,7 @@ Google Drive 素材庫
 
 ## 無人值守自動生產
 
-專案已加入 Vercel Cron route：`/api/cron/production`。
+專案已加入 Vercel Cron route：`/api/auto-production`。
 
 - `vercel.json` 預設每小時呼叫一次。
 - `DAILY_AUTO_IMAGES_PER_RUN=5` 時，每日理論產量約 120 張。
@@ -63,7 +63,7 @@ Google Drive 素材庫
 手動測試：
 
 ```text
-https://你的網域/api/cron/production?secret=你的_CRON_SECRET&target=1
+https://你的網域/api/auto-production?secret=你的_CRON_SECRET&target=1
 ```
 
 ## 相似場景
