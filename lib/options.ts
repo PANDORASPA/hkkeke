@@ -1,14 +1,47 @@
-export const GIRL_STYLES = ["sweet", "cool", "sexy", "sporty", "OL", "xiaohongshu"];
+export const GIRL_STYLES = [
+  "sweet",
+  "cool",
+  "sexy fashion",
+  "sporty",
+  "OL",
+  "xiaohongshu",
+  "luxury casual",
+  "minimal clean girl",
+  "street fashion",
+  "soft elegant",
+  "hair salon model",
+  "travel lifestyle"
+];
 
 export const HAIR_STYLES = [
   "long straight hair",
-  "wavy hair",
+  "soft wavy hair",
+  "loose big waves",
   "ponytail",
-  "short hair",
-  "messy bun"
+  "low ponytail",
+  "short bob",
+  "layered medium hair",
+  "messy bun",
+  "half-up hairstyle",
+  "air bangs",
+  "side parted long hair",
+  "wet look hair"
 ];
 
-export const HAIR_COLORS = ["black", "dark brown", "milk tea brown", "blonde", "red brown"];
+export const HAIR_COLORS = [
+  "natural black",
+  "soft black",
+  "dark brown",
+  "chocolate brown",
+  "milk tea brown",
+  "ash brown",
+  "caramel brown",
+  "rose brown",
+  "red brown",
+  "honey blonde",
+  "dark blonde",
+  "olive brown"
+];
 
 export const OUTFITS = [
   "summer outfit",
@@ -16,20 +49,59 @@ export const OUTFITS = [
   "casual dress",
   "sporty outfit",
   "office outfit",
-  "night out outfit"
+  "night out outfit",
+  "white blouse and midi skirt",
+  "oversized shirt and shorts",
+  "knit top and jeans",
+  "minimal salon uniform",
+  "airport casual outfit",
+  "restaurant date outfit",
+  "hotel lounge outfit",
+  "shopping mall outfit",
+  "light jacket street outfit",
+  "swimwear with cover-up"
 ];
 
-export const BODY_TYPES = ["slim", "curvy", "hourglass", "sporty", "petite"];
+export const BODY_TYPES = [
+  "slim",
+  "soft curvy",
+  "hourglass",
+  "sporty",
+  "petite",
+  "tall slim",
+  "balanced natural proportion",
+  "fit and toned"
+];
 
 export const EXPRESSIONS = [
   "natural smile",
   "cool expression",
   "cute expression",
   "candid street photo expression",
-  "looking back at camera"
+  "looking back at camera",
+  "soft gentle smile",
+  "confident calm look",
+  "slightly surprised candid look",
+  "relaxed neutral expression",
+  "laughing naturally",
+  "focused lifestyle look",
+  "shy subtle smile"
 ];
 
-export const POSES = ["standing", "sitting", "walking", "leaning", "looking back"];
+export const POSES = [
+  "standing",
+  "sitting",
+  "walking",
+  "leaning",
+  "looking back",
+  "holding phone casually",
+  "adjusting hair",
+  "holding handbag",
+  "crossing street",
+  "waiting naturally",
+  "turning body slightly",
+  "looking away candidly"
+];
 
 export const QUALITY_PROMPT =
   "ultra realistic photography, natural skin texture, real camera look, candid pose, slight imperfections, not too perfect, realistic lighting, shallow depth of field, high detail, non-cartoon, non-anime, natural proportion";
@@ -40,38 +112,85 @@ export const NEGATIVE_PROMPT =
 export const OPTION_LABELS: Record<string, string> = {
   sweet: "甜美",
   cool: "冷感",
-  sexy: "性感時尚",
+  "sexy fashion": "性感時尚",
   sporty: "運動感",
   OL: "OL 上班族",
   xiaohongshu: "小紅書感",
+  "luxury casual": "輕奢休閒",
+  "minimal clean girl": "乾淨簡約",
+  "street fashion": "街頭時尚",
+  "soft elegant": "溫柔優雅",
+  "hair salon model": "髮型屋模特",
+  "travel lifestyle": "旅行生活感",
   "long straight hair": "長直髮",
-  "wavy hair": "微曲髮",
+  "soft wavy hair": "柔和微曲髮",
+  "loose big waves": "鬆散大波浪",
   ponytail: "馬尾",
-  "short hair": "短髮",
+  "low ponytail": "低馬尾",
+  "short bob": "短 Bob",
+  "layered medium hair": "中長層次髮",
   "messy bun": "鬆散髮髻",
-  black: "黑色",
-  "dark brown": "深啡色",
+  "half-up hairstyle": "半紮髮",
+  "air bangs": "空氣瀏海",
+  "side parted long hair": "側分長髮",
+  "wet look hair": "濕髮造型",
+  "natural black": "自然黑",
+  "soft black": "柔黑",
+  "dark brown": "深啡",
+  "chocolate brown": "朱古力啡",
   "milk tea brown": "奶茶啡",
-  blonde: "金色",
-  "red brown": "紅啡色",
+  "ash brown": "亞麻灰啡",
+  "caramel brown": "焦糖啡",
+  "rose brown": "玫瑰啡",
+  "red brown": "紅啡",
+  "honey blonde": "蜂蜜金",
+  "dark blonde": "深金啡",
+  "olive brown": "橄欖啡",
   "summer outfit": "夏日穿搭",
   "tank top and denim shorts": "背心配牛仔短褲",
   "casual dress": "休閒連身裙",
   "sporty outfit": "運動穿搭",
   "office outfit": "Office 穿搭",
   "night out outfit": "夜晚外出穿搭",
+  "white blouse and midi skirt": "白恤衫配中裙",
+  "oversized shirt and shorts": "寬鬆恤衫配短褲",
+  "knit top and jeans": "針織上衣配牛仔褲",
+  "minimal salon uniform": "簡約髮型屋制服",
+  "airport casual outfit": "機場休閒穿搭",
+  "restaurant date outfit": "餐廳約會穿搭",
+  "hotel lounge outfit": "酒店 Lounge 穿搭",
+  "shopping mall outfit": "商場穿搭",
+  "light jacket street outfit": "薄外套街拍穿搭",
+  "swimwear with cover-up": "泳衣配罩衫",
   slim: "纖瘦",
-  curvy: "曲線感",
+  "soft curvy": "柔和曲線感",
   hourglass: "沙漏比例",
   petite: "嬌小",
+  "tall slim": "高挑纖瘦",
+  "balanced natural proportion": "自然均衡比例",
+  "fit and toned": "健康緊緻",
   "natural smile": "自然微笑",
   "cool expression": "冷感表情",
   "cute expression": "可愛表情",
   "candid street photo expression": "街拍自然感",
   "looking back at camera": "回望鏡頭",
+  "soft gentle smile": "溫柔淺笑",
+  "confident calm look": "自信淡定",
+  "slightly surprised candid look": "微驚訝抓拍",
+  "relaxed neutral expression": "放鬆自然",
+  "laughing naturally": "自然笑出來",
+  "focused lifestyle look": "生活感專注",
+  "shy subtle smile": "害羞淺笑",
   standing: "站立",
   sitting: "坐姿",
   walking: "行走",
   leaning: "倚靠",
-  "looking back": "回望"
+  "looking back": "回望",
+  "holding phone casually": "自然拎手機",
+  "adjusting hair": "整理頭髮",
+  "holding handbag": "拎手袋",
+  "crossing street": "過馬路",
+  "waiting naturally": "自然等候",
+  "turning body slightly": "身體微轉",
+  "looking away candidly": "望向旁邊抓拍"
 };

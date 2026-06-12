@@ -251,8 +251,9 @@ function explainDriveUploadError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("storageQuotaExceeded") || message.includes("Service Accounts do not have storage quota")) {
     return [
-      "圖片已生成，但 Google Drive 上傳失敗：Service Account 沒有個人儲存空間 quota。",
-      "目前已先提供本機下載。要自動上傳 Drive，請把成品資料夾放在 Google Shared Drive，或改用 Google OAuth 使用者授權。"
+      "圖片已生成，但 Google Drive 上傳失敗：Service Account 沒有個人儲存 quota。",
+      "要自動上傳 Drive，請把成品資料夾放在 Google Shared Drive，或改用 Google OAuth 使用者授權。",
+      "目前已先保存到本機歷史，可在 Gallery 或生成結果內下載/補傳。"
     ].join(" ");
   }
   return `圖片已生成，但 Google Drive 上傳失敗：${message}`;

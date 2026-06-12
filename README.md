@@ -1,45 +1,46 @@
 # AI 女仔圖片生成器
 
-本機單人使用取向的 Next.js MVP：
+本機/單人使用取向的 Next.js MVP：
 
 ```text
 Google Drive 素材庫
 -> /generate 控制台
 -> OpenAI Images API 生成圖片
 -> Google Drive 成品資料夾
--> Supabase 生成記錄
--> /gallery 圖庫
+-> Supabase generated_images 紀錄
+-> /gallery 審稿和整理
 ```
 
 ## 頁面
 
-- `/generate`：同步 Google Drive 素材、上傳本地素材、匯入/匯出素材包、選場景和參考圖、生成 1/2/4 張圖、加入列隊、生成相似場景。
-- `/gallery`：合併 Supabase 記錄和本機歷史，顯示成品、prompt、狀態、下載和 Google Drive 連結，並支援品質報表、批次報表、搜尋、今日篩選和批量整理。
-- `/settings`：OpenAI API key 輸入、連接測試、正確使用方法和 Drive folder map。
+- `/generate`：同步 Google Drive 素材、上傳本地素材、匯入/匯出素材包、選場景和參考圖、生成 1/2/4 張圖、建立批量列隊、生成相似場景。
+- `/gallery`：顯示 Supabase 紀錄和本機歷史，支援保留/唔要、審稿標籤、批次報表、品質報表、搜尋、下載和 Google Drive 連結。
+- `/settings`：設定 API key、測試 OpenAI / Google Drive / Supabase 連接、查看 Drive folder map。
 
 ## 正確使用方法
 
 1. 把素材圖片放入 Google Drive 對應資料夾。
 2. 到 `/generate` 按「同步 Google Drive 素材」。
-3. 最少選一張場景圖。
-4. 可選女仔參考、衣服、髮型、姿勢參考圖。
-5. 設定風格、髮型、髮色、衣服、身材、表情、姿勢。
-6. 按「生成」即時生成，或按「加入列隊」排多組慢慢生成。
-7. 生成結果會保存到本機 Gallery；如 Google Drive 可寫入，亦會上傳到成品資料夾。
+3. 至少選一張場景圖。
+4. 可選女仔、衣服、髮型、姿勢參考圖。
+5. 設定女仔風格、髮型、髮色、衣服、身材、表情和姿勢。
+6. 按「生成」即時生成，或按「加入列隊」排多組任務。
+7. 成品會先保存到本機歷史；如果 Google Drive 設定可寫入，會自動上傳到成品資料夾並寫入 Supabase。
+8. 如果 Drive 上傳失敗，生成結果卡會顯示「補傳 Drive」，修正 Drive 設定後可逐張補傳。
 
 ## 批量生產 100+ 張
 
-`/generate` 的「批量生產工廠」可一次建立大量列隊任務：
+`/generate` 的「批量生產工廠」可以一次建立大量列隊任務：
 
-1. 設定目標張數，例如 `100`。
-2. 可直接按 `24 張試產`、`100 張日產` 或 `200 張高量` 生產規模 preset。
-3. 每任務張數建議選 `4`，100 張會建立約 25 個任務。
-4. 任務間隔秒數建議 `8-15` 秒，減少 rate limit 風險。
-5. 自動重試次數建議 `2`，API 或 Drive 偶發錯誤會自動再試。
-6. 勾選「批量防錯 prompt」，針對手部、臉部、背景、風格、衣服或重複構圖加強避免。
-7. 先看「生產前檢查」，確認場景數、參考素材、任務數、預估時間和風險提示。
-8. 看「生產計劃」確認場景覆蓋和前 8 個任務樣本；需要留底可匯出 JSON。
-9. 按「建立批量列隊」只建立任務；按「建立並開始」會立即逐個生成。
+1. 可直接按 `24 張試產`、`100 張日產` 或 `200 張高量` 生產規模 preset。
+2. 每任務張數建議選 `4`，100 張會建立約 25 個任務。
+3. 任務間隔秒數建議 `8-15` 秒，減少 rate limit 風險。
+4. 自動重試次數建議 `2`，API 或 Drive 偶發錯誤會自動再試。
+5. 勾選「批量防錯 prompt」，針對手部、臉部、背景、風格、衣服或重複構圖加強避免。
+6. 先看「生產前檢查」，確認場景數、參考素材、任務數、預估時間和風險提示。
+7. 看「生產計劃」確認場景覆蓋和前 8 個任務樣本；需要留底可匯出 JSON。
+8. 按「建立批量列隊」只建立任務；按「建立並開始」會立即逐個生成。
+9. 開啟「開頁自動繼續列隊」後，只要本機瀏覽器重新打開 `/generate`，未完成的 pending 任務會自動繼續。
 10. 生成期間可按「暫停」，系統會在目前任務完成後停止。
 11. 可按「繼續列隊」恢復，或按「重試全部失敗」把失敗任務放回等待中。
 12. 常用設定可保存成「生產配方」，下次直接套用。
@@ -48,21 +49,26 @@ Google Drive 素材庫
 
 批量工廠會自動輪流組合不同場景、女仔風格、髮型、髮色、衣服、身材、表情和姿勢。若素材庫有女仔/衣服/髮型/姿勢參考圖，亦可以勾選使用參考素材。
 
+## 相似場景
+
+場景不足時，可以先選一張場景，再按「按目前場景生成相似場景」。
+
+- 臨時相似場景會立即用作下一次生成背景。
+- 按「保存到 Drive 場景庫」後，會上傳到 `01_Scenes_場景` folder，之後同步素材和批量工廠都會用到。
+- 如果 Drive 因 quota 或權限上傳失敗，可以先下載場景圖，再修正 Drive 設定後補放入素材庫。
+
 ## 大量成品整理
 
-`/gallery` 是批量生成後的收貨頁：
+`/gallery` 是批量生成後的收貨台：
 
 1. 用「只看今日」快速集中處理每日產出。
 2. 用搜尋欄找 prompt、衣服、髮型、表情或姿勢。
 3. 先把滿意圖片標記「保留」，不合格圖片標記「唔要」。
 4. 為圖片加審稿標籤，例如手部問題、臉部崩壞、背景不真實、風格唔啱、衣服唔啱、太重複。
-5. 可對目前可見的本機圖片批量保留、批量唔要、批量還原或刪除。
-6. 用「批次報表」查看每一批生成了幾多張、保留幾多、唔要幾多。
-7. 可整批保留、整批唔要、查看批次、匯出單一批次或刪除批次本機圖片。
-8. 用「品質報表」查看女仔風格、衣服、髮型、髮色、表情、身材和姿勢的保留率，並查看常見問題。
-9. 按「套用高保留組合到生成」會回到 `/generate`，自動填入高保留率設定、防錯 prompt 和批量 prompt。
-10. 把高保留率組合保存成下一次「生產配方」，低保留率組合就減少使用。
-11. 匯出素材包 JSON 可備份本機歷史、素材、批次、審稿標籤和列隊。
+5. 用「品質報表」查看女仔風格、衣服、髮型、髮色、表情、身材和姿勢的保留率。
+6. 按「套用高保留組合到生成」會回到 `/generate`，自動填入高保留率設定、防錯 prompt 和批量 prompt。
+7. 把高保留率組合保存成下一次「生產配方」，低保留率組合就減少使用。
+8. 匯出素材包 JSON 可備份本機歷史、素材、批次、審稿標籤和列隊。
 
 ## Google Drive 素材庫
 
@@ -76,19 +82,18 @@ AI-Girl-Generator/
 06_Generated_成品/
 ```
 
-App 會讀取每個主要資料夾和下一層子資料夾內的圖片。子資料夾名稱會當作素材分類。
+App 會讀取每個主要資料夾和下一層子資料夾的圖片。子資料夾名稱會當作素材分類。
 
-請把 root folder 分享給 `GOOGLE_CLIENT_EMAIL` 的 service account。若 service account 上傳到 My Drive 出現 quota 問題，生成結果仍會以 data URL 留在本機 Gallery 供下載；建議改用 shared drive 或手動下載保存。
+請把 root folder 分享給 `GOOGLE_CLIENT_EMAIL` 的 service account。若 service account 上傳到 My Drive 出現 quota 問題，代表 Google 不容許 service account 使用個人儲存空間。要穩定自動上傳，建議把素材和成品資料夾放在 Google Shared Drive，或之後升級成 Google OAuth 使用者授權。
 
 ## 素材包 JSON
 
 `/generate` 支援「匯出素材包 JSON」和「匯入素材包 JSON」。
 
-素材包會包含：
-
+素材包包含：
 - 本地上傳素材
 - 本地生成圖片
-- 批次記錄
+- 批次紀錄
 - 生成列隊
 
 建議把匯出的 JSON 放入 Google Drive，例如：
@@ -110,7 +115,6 @@ AI-Girl-Generator/asset-packs/main/asset-pack.json
 - server route 會把回傳圖片轉成 PNG buffer，再嘗試上傳 Drive 和寫入 Supabase
 
 如果 `/settings` 測試出現 HTTP 403，通常代表：
-
 - API key 屬於錯誤 Project
 - Project/API key 權限不足
 - restricted key 未開啟相關 endpoint 權限
@@ -138,38 +142,3 @@ GOOGLE_DRIVE_HAIR_FOLDER_ID=
 GOOGLE_DRIVE_POSES_FOLDER_ID=
 GOOGLE_DRIVE_GENERATED_FOLDER_ID=
 ```
-
-`OPENAI_API_KEY` 亦可以在 `/settings` 輸入。server route 會優先嘗試保存到 Supabase `app_settings`；如果 Supabase 暫停，會以 httpOnly cookie 保存，不會寫入前端 localStorage。
-
-## Supabase
-
-需要建立：
-
-- `drive_assets`
-- `generated_images`
-- `app_settings`
-
-如果 Supabase 暫停，Google Drive 素材同步和圖片生成仍可用；Gallery 會顯示本機歷史。
-
-## 開發
-
-```powershell
-npm install
-npm run dev
-```
-
-打開：
-
-```text
-http://localhost:3000/generate
-```
-
-## API Routes
-
-- `GET /api/drive/assets`：讀取 Google Drive 圖片素材，並嘗試同步到 Supabase。
-- `POST /api/generate-image`：組 prompt、呼叫 OpenAI Images API、上傳 Drive、寫入 Supabase、回傳圖片 data URL。
-- `POST /api/generate-scene`：按目前場景圖生成相似場景。
-- `GET /api/generated`：讀取生成圖庫資料。
-- `GET /api/generated/[id]/download`：從 Drive 下載指定成品 PNG。
-- `GET /api/health`：Supabase / Google Drive / OpenAI 連接檢查。
-- `GET/POST /api/settings/openai-key`：讀取狀態、測試並儲存 OpenAI API key。

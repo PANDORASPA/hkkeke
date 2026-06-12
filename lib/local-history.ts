@@ -170,6 +170,39 @@ export async function updateLocalImageStatus(id: string, status: LocalGeneratedI
   db.close();
 }
 
+export async function updateLocalImageDriveUpload(
+  id: string,
+  uploaded: {
+    google_drive_file_id: string;
+    google_drive_url: string | null;
+    thumbnail_url: string | null;
+    file_name?: string | null;
+  }
+) {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(IMAGE_STORE, "readwrite");
+    const store = tx.objectStore(IMAGE_STORE);
+    const request = store.get(id);
+    request.onsuccess = () => {
+      const image = request.result as LocalGeneratedImage | undefined;
+      if (image) {
+        store.put({
+          ...image,
+          google_drive_file_id: uploaded.google_drive_file_id,
+          google_drive_url: uploaded.google_drive_url,
+          thumbnail_url: uploaded.thumbnail_url || image.thumbnail_url,
+          file_name: uploaded.file_name || image.file_name,
+          upload_warning: null
+        });
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("更新本地 Drive 上傳狀態失敗。"));
+  });
+  db.close();
+}
+
 export async function updateLocalImagesStatus(ids: string[], status: LocalGeneratedImage["local_status"]) {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {

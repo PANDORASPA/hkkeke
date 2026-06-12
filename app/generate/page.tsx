@@ -24,6 +24,7 @@ import {
   saveGeneratedBatch,
   saveLocalQueue,
   saveLocalAsset,
+  updateLocalImageDriveUpload,
   updateLocalImageStatus
 } from "@/lib/local-history";
 import { DriveAsset, GeneratedImage, GeneratePayload } from "@/lib/types";
@@ -67,6 +68,7 @@ type FactoryRecipe = {
 };
 
 const FACTORY_RECIPES_KEY = "ai-girl-generator.factory-recipes";
+const AUTO_RESUME_QUEUE_KEY = "ai-girl-generator.auto-resume-queue";
 
 const issueAvoidanceOptions = [
   {
@@ -186,17 +188,21 @@ export default function GeneratePage() {
   const [factoryRecipes, setFactoryRecipes] = useState<FactoryRecipe[]>([]);
   const [generating, setGenerating] = useState(false);
   const [generatingScene, setGeneratingScene] = useState(false);
+  const [savingSceneVariation, setSavingSceneVariation] = useState(false);
+  const [uploadingResultIds, setUploadingResultIds] = useState<string[]>([]);
   const [sceneVariation, setSceneVariation] = useState<SceneVariation | null>(null);
   const [results, setResults] = useState<GeneratedImage[]>([]);
   const [queue, setQueue] = useState<QueueJob[]>([]);
   const [queueRunning, setQueueRunning] = useState(false);
   const [queuePaused, setQueuePaused] = useState(false);
+  const [autoResumeQueue, setAutoResumeQueue] = useState(false);
   const queueRef = useRef<QueueJob[]>([]);
   const queueRunningRef = useRef(false);
   const queuePausedRef = useRef(false);
   const queueSaveChainRef = useRef(Promise.resolve());
 
   useEffect(() => {
+    setAutoResumeQueue(window.localStorage.getItem(AUTO_RESUME_QUEUE_KEY) === "true");
     void fetchAssets().finally(() => loadPendingProductionPreset());
     restoreQueue();
     loadFactoryRecipes();
@@ -218,9 +224,18 @@ export default function GeneratePage() {
       if (normalizedQueue.length) {
         setStatus(`已恢復 ${normalizedQueue.length} 個列隊任務。`);
       }
+      if (window.localStorage.getItem(AUTO_RESUME_QUEUE_KEY) === "true" && normalizedQueue.some((job) => job.status === "pending")) {
+        window.setTimeout(() => void processQueue(), 300);
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "讀取列隊失敗。");
     }
+  }
+
+  function toggleAutoResumeQueue(checked: boolean) {
+    setAutoResumeQueue(checked);
+    window.localStorage.setItem(AUTO_RESUME_QUEUE_KEY, checked ? "true" : "false");
+    setStatus(checked ? "已開啟開頁自動繼續列隊。" : "已關閉開頁自動繼續列隊。");
   }
 
   function loadFactoryRecipes() {
@@ -922,6 +937,85 @@ export default function GeneratePage() {
     }
   }
 
+  async function saveSceneVariationToDrive() {
+    if (!sceneVariation) return;
+    setSavingSceneVariation(true);
+    setStatus("正在保存相似場景到 Google Drive 場景庫...");
+    try {
+      const response = await fetch("/api/drive/upload-asset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: "scene",
+          dataUrl: sceneVariation.data_url,
+          fileName: sceneVariation.file_name
+        })
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "保存相似場景到 Google Drive 失敗。");
+      const asset = json.asset as DriveAsset;
+      setAssets((current) => ({ ...current, scene: [asset, ...current.scene] }));
+      setSelectedScene(asset.id || asset.google_drive_file_id);
+      setSceneVariation(null);
+      setStatus("相似場景已保存到 Google Drive 場景庫，之後批量生產會自動用到。");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "保存相似場景到 Google Drive 失敗。");
+    } finally {
+      setSavingSceneVariation(false);
+    }
+  }
+
+  async function uploadResultToDrive(image: GeneratedImage) {
+    if (!image.data_url) {
+      setStatus("這張圖片沒有本機 data URL，不能補傳。");
+      return;
+    }
+    setUploadingResultIds((current) => [...current, image.id]);
+    setStatus("正在補傳成品到 Google Drive...");
+    try {
+      const imageResponse = await fetch(image.data_url);
+      const blob = await imageResponse.blob();
+      const formData = new FormData();
+      formData.append("file", blob, image.file_name || "generated.png");
+      formData.append("fileName", image.file_name || "generated.png");
+      formData.append("prompt", image.prompt || "");
+      formData.append("negativePrompt", image.negative_prompt || "");
+      formData.append("sceneAssetId", image.scene_asset_id || "");
+      formData.append("girlReferenceAssetId", image.girl_reference_asset_id || "");
+      formData.append("outfitAssetId", image.outfit_asset_id || "");
+      formData.append("hairAssetId", image.hair_asset_id || "");
+      formData.append("poseAssetId", image.pose_asset_id || "");
+      formData.append("girlStyle", image.girl_style || "");
+      formData.append("hairStyle", image.hairstyle || "");
+      formData.append("hairColor", image.hair_color || "");
+      formData.append("outfit", image.outfit || "");
+      formData.append("expression", image.expression || "");
+      formData.append("bodyType", image.body_type || "");
+      formData.append("pose", image.pose || "");
+      const response = await fetch("/api/drive/upload-generated", {
+        method: "POST",
+        body: formData
+      });
+      const uploaded = await response.json();
+      if (!response.ok) throw new Error(uploaded.error || "補傳成品到 Google Drive 失敗。");
+
+      await updateLocalImageDriveUpload(image.id, uploaded);
+      setResults((current) => current.map((item) => item.id === image.id ? {
+        ...item,
+        google_drive_file_id: uploaded.google_drive_file_id,
+        google_drive_url: uploaded.google_drive_url,
+        thumbnail_url: uploaded.thumbnail_url || item.thumbnail_url,
+        file_name: uploaded.file_name || item.file_name,
+        upload_warning: null
+      } : item));
+      setStatus("成品已補傳到 Google Drive。");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "補傳成品到 Google Drive 失敗。");
+    } finally {
+      setUploadingResultIds((current) => current.filter((id) => id !== image.id));
+    }
+  }
+
   async function uploadLocalAsset(category: keyof AssetsByCategory, fileList: FileList | null) {
     const file = fileList?.[0];
     if (!file) return;
@@ -1035,13 +1129,17 @@ export default function GeneratePage() {
             <button onClick={generateSimilarScene} disabled={generatingScene || !selectedScene}>
               {generatingScene ? "生成相似場景中..." : "按目前場景生成相似場景"}
             </button>
+            <p className="muted">生成後可保存到 Drive 場景庫，之後批量生產會自動輪流使用。</p>
             {sceneVariation ? (
               <article className="asset-card selected">
                 <img src={sceneVariation.data_url} alt="相似場景" />
                 <div>
                   <strong>臨時相似場景</strong>
-                  <span>主生成會使用這張場景；如想長期保存，請下載後放回 Drive 場景庫。</span>
+                  <span>主生成會使用這張場景；可一鍵保存到 Drive 場景庫，之後批量生產會自動用到。</span>
                   <div className="card-actions">
+                    <button type="button" onClick={saveSceneVariationToDrive} disabled={savingSceneVariation}>
+                      {savingSceneVariation ? "保存中..." : "保存到 Drive 場景庫"}
+                    </button>
                     <a href={sceneVariation.data_url} download={sceneVariation.file_name}>下載場景</a>
                     <button type="button" onClick={() => setSceneVariation(null)}>改回原場景</button>
                   </div>
@@ -1258,6 +1356,14 @@ export default function GeneratePage() {
               <strong>生成列隊</strong>
               <p className="muted">適合一次排幾組場景/造型，系統會逐個生成；列隊會保存在本機，刷新後仍可重試未完成任務。</p>
             </div>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={autoResumeQueue}
+                onChange={(event) => toggleAutoResumeQueue(event.target.checked)}
+              />
+              開頁自動繼續列隊
+            </label>
             <div className="queue-stats">
               <span>任務：{queueStats.totalJobs}</span>
               <span>等待：{queueStats.pendingJobs}</span>
@@ -1325,6 +1431,15 @@ export default function GeneratePage() {
                     <button type="button" onClick={() => markResult(image.id, "selected")}>保留</button>
                     <button type="button" onClick={() => markResult(image.id, "rejected")}>唔要</button>
                     {image.google_drive_url ? <a href={image.google_drive_url} target="_blank">Google Drive</a> : null}
+                    {!image.google_drive_url && image.data_url ? (
+                      <button
+                        type="button"
+                        onClick={() => uploadResultToDrive(image)}
+                        disabled={uploadingResultIds.includes(image.id)}
+                      >
+                        {uploadingResultIds.includes(image.id) ? "補傳中..." : "補傳 Drive"}
+                      </button>
+                    ) : null}
                     {image.data_url ? (
                       <a href={image.data_url} download={image.file_name || "generated.png"}>下載</a>
                     ) : (

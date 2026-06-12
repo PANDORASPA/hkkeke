@@ -136,13 +136,10 @@ export async function downloadDriveFile(fileId: string) {
   return Buffer.from(buffer);
 }
 
-export async function uploadGeneratedImage(buffer: Buffer, fileName: string) {
-  const folderId = DRIVE_FOLDERS.generated;
-  if (!folderId) throw new Error("Missing GOOGLE_DRIVE_GENERATED_FOLDER_ID.");
-
+export async function uploadImageToDriveFolder(buffer: Buffer, fileName: string, folderId: string, mimeType = "image/png") {
   const metadata = {
     name: fileName,
-    mimeType: "image/png",
+    mimeType,
     parents: [folderId]
   };
 
@@ -150,14 +147,14 @@ export async function uploadGeneratedImage(buffer: Buffer, fileName: string) {
   const body = Buffer.concat([
     Buffer.from(
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
-        `--${boundary}\r\nContent-Type: image/png\r\n\r\n`
+        `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`
     ),
     buffer,
     Buffer.from(`\r\n--${boundary}--`)
   ]);
 
   const file = await driveFetch<DriveFile>(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,thumbnailLink,webViewLink",
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,mimeType,thumbnailLink,webViewLink",
     {
       method: "POST",
       headers: {
@@ -174,6 +171,29 @@ export async function uploadGeneratedImage(buffer: Buffer, fileName: string) {
     file_name: file.name,
     mime_type: file.mimeType
   };
+}
+
+export async function uploadGeneratedImage(buffer: Buffer, fileName: string) {
+  const folderId = DRIVE_FOLDERS.generated;
+  if (!folderId) throw new Error("Missing GOOGLE_DRIVE_GENERATED_FOLDER_ID.");
+  return uploadImageToDriveFolder(buffer, fileName, folderId);
+}
+
+export async function uploadAssetImage(buffer: Buffer, fileName: string, category: AssetCategory, mimeType = "image/png") {
+  const folderId = DRIVE_FOLDERS[category];
+  if (!folderId) throw new Error(`Missing Google Drive folder id for ${category}.`);
+  const uploaded = await uploadImageToDriveFolder(buffer, fileName, folderId, mimeType);
+  return {
+    id: uploaded.google_drive_file_id,
+    google_drive_file_id: uploaded.google_drive_file_id,
+    google_drive_url: uploaded.google_drive_url,
+    thumbnail_url: uploaded.thumbnail_url,
+    file_name: uploaded.file_name,
+    mime_type: uploaded.mime_type,
+    category,
+    sub_category: "AI_Generated",
+    tags: [category, "ai-generated"]
+  } satisfies DriveAsset;
 }
 
 export function makeGeneratedFileName(input: {
