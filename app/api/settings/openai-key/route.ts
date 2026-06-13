@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { OPENAI_KEY_NAME, formatAppSettingsError, getOpenAIKeyWithSource, setAppSetting } from "@/lib/app-settings";
+import { setDriveAppSetting } from "@/lib/drive-app-settings";
 import { setOpenAIKeyCookie } from "@/lib/openai-key-cookie";
 import { maskOpenAIKey, testOpenAIKey } from "@/lib/openai";
 
@@ -37,21 +38,31 @@ export async function POST(request: NextRequest) {
 
     let supabaseStored = false;
     let supabaseMessage = "";
+    let driveStored = false;
+    let driveMessage = "";
     try {
       await setAppSetting(OPENAI_KEY_NAME, apiKey);
       supabaseStored = true;
     } catch (error) {
       supabaseMessage = formatAppSettingsError(error);
     }
+    try {
+      await setDriveAppSetting(OPENAI_KEY_NAME, apiKey);
+      driveStored = true;
+    } catch (error) {
+      driveMessage = error instanceof Error ? error.message : "保存到 Google Drive 設定檔失敗。";
+    }
 
     const response = NextResponse.json({
       configured: true,
       masked: maskOpenAIKey(apiKey),
-      source: supabaseStored ? "supabase+cookie" : "cookie",
+      source: supabaseStored ? "supabase+cookie" : driveStored ? "drive+cookie" : "cookie",
       supabaseStored,
       supabaseMessage,
+      driveStored,
+      driveMessage,
       test,
-      message: buildSaveMessage(test.ok, supabaseStored, supabaseMessage)
+      message: buildSaveMessage(test.ok, supabaseStored, supabaseMessage, driveStored, driveMessage)
     });
     setOpenAIKeyCookie(response, apiKey);
     return response;
@@ -63,19 +74,27 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function buildSaveMessage(testOk: boolean, supabaseStored: boolean, supabaseMessage: string) {
+function buildSaveMessage(
+  testOk: boolean,
+  supabaseStored: boolean,
+  supabaseMessage: string,
+  driveStored: boolean,
+  driveMessage: string
+) {
   const lines = [
     testOk
       ? "OpenAI API key 已測試成功。"
       : "OpenAI API key 已保存，但 OpenAI 回應 403 權限問題。請按提示修正 OpenAI Project/Organization 權限後再測試。"
   ];
 
-  lines.push(
-    supabaseStored
-      ? "已同步保存到 Supabase app_settings，亦已保存到本機瀏覽器 httpOnly cookie。全自動任務可讀取 Supabase key。"
-      : "Supabase 暫時不可用，已先保存到本機瀏覽器 httpOnly cookie；手動生成可用，但全自動任務仍需要 Supabase 恢復或 Vercel OPENAI_API_KEY。"
-  );
+  if (supabaseStored) lines.push("已同步保存到 Supabase app_settings。");
+  if (driveStored) lines.push("已加密保存到 Google Drive root 設定檔，全自動任務可由 server-side 讀取。");
+  lines.push("已保存到本機瀏覽器 httpOnly cookie，手動生成可即時使用。");
+  if (!supabaseStored && !driveStored) {
+    lines.push("Supabase 和 Google Drive 設定檔都未能保存；目前只有本機 cookie 可用，全自動任務仍未 ready。");
+  }
 
   if (supabaseMessage) lines.push(supabaseMessage);
+  if (driveMessage) lines.push(driveMessage);
   return lines.join("\n");
 }

@@ -183,10 +183,10 @@ function getAutomationBlockers(input: {
   if (!input.supabaseOk) blockers.push("Supabase 未可用：不能記錄 generated_images、同步素材、保存 server-side OpenAI key。");
   if (!input.openaiOk) blockers.push("OpenAI 未可用：不能生成圖片。");
   if (input.openaiSource === "cookie") {
-    blockers.push("OpenAI key 只存在瀏覽器 cookie；手動生成可用，但 GitHub/Vercel 全自動任務讀不到。請把 key 存到 Supabase app_settings 或設定 Vercel OPENAI_API_KEY。");
+    blockers.push("OpenAI key 只存在瀏覽器 cookie；手動生成可用，但 GitHub/Vercel 全自動任務讀不到。請把 key 存到 Google Drive 加密設定檔、Supabase app_settings，或設定 Vercel OPENAI_API_KEY。");
   }
   if (input.openaiSource === "missing") {
-    blockers.push("未設定 server-side OpenAI key。全自動任務需要 Vercel OPENAI_API_KEY，或 Supabase app_settings 可讀到 OPENAI_API_KEY。");
+    blockers.push("未設定 server-side OpenAI key。全自動任務需要 Vercel OPENAI_API_KEY、Supabase app_settings，或 Google Drive 加密設定檔可讀到 OPENAI_API_KEY。");
   }
   return blockers;
 }

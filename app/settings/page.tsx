@@ -257,7 +257,9 @@ function HealthCard(props: { title: string; item: HealthItem }) {
 function sourceLabel(source: string) {
   if (source === "cookie") return "本機 cookie";
   if (source === "supabase") return "Supabase";
+  if (source === "drive") return "Google Drive 加密設定檔";
   if (source === "env") return "Vercel env";
   if (source === "supabase+cookie") return "Supabase + 本機 cookie";
+  if (source === "drive+cookie") return "Google Drive 加密設定檔 + 本機 cookie";
   return source;
 }

@@ -173,6 +173,50 @@ export async function uploadImageToDriveFolder(buffer: Buffer, fileName: string,
   };
 }
 
+export async function readJsonFileFromDriveFolder<T>(folderId: string, fileName: string) {
+  const file = await findFileInFolder(folderId, fileName);
+  if (!file) return null;
+  const buffer = await downloadDriveFile(file.id);
+  return JSON.parse(buffer.toString("utf8")) as T;
+}
+
+export async function upsertJsonFileToDriveFolder(folderId: string, fileName: string, value: unknown) {
+  const body = Buffer.from(JSON.stringify(value, null, 2), "utf8");
+  const existing = await findFileInFolder(folderId, fileName);
+  if (existing) {
+    const updated = await driveFetch<DriveFile>(
+      `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media&supportsAllDrives=true&fields=id,name,mimeType,thumbnailLink,webViewLink`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body
+      }
+    );
+    return {
+      google_drive_file_id: updated.id,
+      google_drive_url: updated.webViewLink || `https://drive.google.com/file/d/${updated.id}/view`,
+      thumbnail_url: updated.thumbnailLink || null,
+      file_name: updated.name,
+      mime_type: updated.mimeType
+    };
+  }
+
+  return uploadImageToDriveFolder(body, fileName, folderId, "application/json");
+}
+
+async function findFileInFolder(folderId: string, fileName: string) {
+  const query = encodeURIComponent(
+    `'${folderId}' in parents and trashed = false and name = '${escapeDriveQuery(fileName)}'`
+  );
+  const url =
+    `https://www.googleapis.com/drive/v3/files?q=${query}` +
+    `&fields=files(id,name,mimeType,thumbnailLink,webViewLink,parents)&pageSize=1&supportsAllDrives=true`;
+  const result = await driveFetch<{ files?: DriveFile[] }>(url);
+  return result.files?.[0] || null;
+}
+
 export async function uploadGeneratedImage(buffer: Buffer, fileName: string) {
   const folderId = DRIVE_FOLDERS.generated;
   if (!folderId) throw new Error("Missing GOOGLE_DRIVE_GENERATED_FOLDER_ID.");

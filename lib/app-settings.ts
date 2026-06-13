@@ -1,5 +1,6 @@
 import { getOpenAIKeyFromCookie } from "./openai-key-cookie";
 import { getSupabaseAdmin } from "./supabase-admin";
+import { getDriveAppSetting } from "./drive-app-settings";
 
 export const OPENAI_KEY_NAME = "OPENAI_API_KEY";
 
@@ -10,7 +11,7 @@ type SupabaseLikeError = {
   hint?: string;
 };
 
-export type OpenAIKeySource = "supabase" | "cookie" | "env" | "missing";
+export type OpenAIKeySource = "supabase" | "drive" | "cookie" | "env" | "missing";
 
 export function formatAppSettingsError(error: unknown) {
   const err = error as SupabaseLikeError;
@@ -63,6 +64,13 @@ export async function getOpenAIKeyWithSource() {
     if (fromDb) return { key: fromDb, source: "supabase" as OpenAIKeySource };
   } catch {
     // Supabase may be paused. Continue to cookie/env fallback.
+  }
+
+  try {
+    const fromDrive = await getDriveAppSetting(OPENAI_KEY_NAME);
+    if (fromDrive) return { key: fromDrive, source: "drive" as OpenAIKeySource };
+  } catch {
+    // Drive settings are optional; continue to cookie/env fallback.
   }
 
   const fromCookie = await getOpenAIKeyFromCookie();
