@@ -26,6 +26,7 @@ const ENV_GROUPS = {
 type AutomationStatus = ReturnType<typeof buildAutomationStatus> & {
   ready: boolean;
   blockers: string[];
+  warnings: string[];
 };
 
 function missingEnv(keys: string[]) {
@@ -52,6 +53,7 @@ export async function GET() {
   const automation = buildAutomationStatus() as AutomationStatus;
   automation.ready = false;
   automation.blockers = [];
+  automation.warnings = [];
 
   const result = {
     supabase: { ok: false, message: "" },
@@ -116,7 +118,7 @@ export async function GET() {
     result.env.openai = key ? "set" : "Missing: OPENAI_API_KEY";
     result.env.openaiSource = source;
     if (!key) {
-      throw new Error("未設定 OpenAI API key。手動生成可在設定頁輸入；全自動生產需要 Vercel OPENAI_API_KEY，或 Supabase app_settings 可正常讀寫。");
+      throw new Error("未設定 OpenAI API key。手動生成可在設定頁輸入；全自動生產需要 Vercel OPENAI_API_KEY、Supabase app_settings，或 Google Drive 加密設定檔。");
     }
     const test = await testOpenAIKey(key);
     result.openai = { ok: test.ok, message: test.message };
@@ -124,16 +126,18 @@ export async function GET() {
     result.openai = { ok: false, message: error instanceof Error ? error.message : "OpenAI 連接失敗。" };
   }
 
-  result.automation.blockers = getAutomationBlockers({
+  const automationIssues = getAutomationIssues({
     automationConfigured: result.automation.ok,
     supabaseOk: result.supabase.ok,
     googleDriveOk: result.googleDrive.ok,
     openaiOk: result.openai.ok,
     openaiSource
   });
+  result.automation.blockers = automationIssues.blockers;
+  result.automation.warnings = automationIssues.warnings;
   result.automation.ready = result.automation.blockers.length === 0;
   result.automation.message = result.automation.ready
-    ? "自動生產已準備好：GitHub/Vercel 觸發、OpenAI、Google Drive、Supabase 都可用。"
+    ? "自動生產成品流程已準備好：觸發器、OpenAI、Google Drive 都可用。"
     : `${result.automation.message} 目前仍有 ${result.automation.blockers.length} 個阻塞點，未算真正全自動 ready。`;
 
   return NextResponse.json(result);
@@ -170,7 +174,7 @@ function buildAutomationStatus() {
   };
 }
 
-function getAutomationBlockers(input: {
+function getAutomationIssues(input: {
   automationConfigured: boolean;
   supabaseOk: boolean;
   googleDriveOk: boolean;
@@ -178,9 +182,10 @@ function getAutomationBlockers(input: {
   openaiSource: OpenAIKeySource;
 }) {
   const blockers: string[] = [];
+  const warnings: string[] = [];
   if (!input.automationConfigured) blockers.push("自動觸發未完整設定：需要 GitHub OIDC workflow 或 CRON_SECRET。");
   if (!input.googleDriveOk) blockers.push("Google Drive 未可用：不能讀素材或上傳成品。");
-  if (!input.supabaseOk) blockers.push("Supabase 未可用：不能記錄 generated_images、同步素材、保存 server-side OpenAI key。");
+  if (!input.supabaseOk) warnings.push("Supabase 未可用：成品仍可生成並上傳 Drive，但 generated_images、素材同步紀錄、最後自動生產紀錄會不完整。");
   if (!input.openaiOk) blockers.push("OpenAI 未可用：不能生成圖片。");
   if (input.openaiSource === "cookie") {
     blockers.push("OpenAI key 只存在瀏覽器 cookie；手動生成可用，但 GitHub/Vercel 全自動任務讀不到。請把 key 存到 Google Drive 加密設定檔、Supabase app_settings，或設定 Vercel OPENAI_API_KEY。");
@@ -188,5 +193,5 @@ function getAutomationBlockers(input: {
   if (input.openaiSource === "missing") {
     blockers.push("未設定 server-side OpenAI key。全自動任務需要 Vercel OPENAI_API_KEY、Supabase app_settings，或 Google Drive 加密設定檔可讀到 OPENAI_API_KEY。");
   }
-  return blockers;
+  return { blockers, warnings };
 }

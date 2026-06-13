@@ -12,6 +12,7 @@ type AutomationStatus = {
   ready: boolean;
   message: string;
   blockers: string[];
+  warnings: string[];
   cronSecret: string;
   vercelDailyCron: string;
   githubHourlyWorkflow: string;
@@ -168,6 +169,13 @@ export default function SettingsPage() {
                 <div className="readiness-list warning">
                   {health.automation.blockers.map((blocker) => (
                     <span key={blocker}>{blocker}</span>
+                  ))}
+                </div>
+              ) : null}
+              {health.automation.warnings?.length ? (
+                <div className="readiness-list warning">
+                  {health.automation.warnings.map((warning) => (
+                    <span key={warning}>{warning}</span>
                   ))}
                 </div>
               ) : null}
