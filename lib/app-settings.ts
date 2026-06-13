@@ -21,7 +21,7 @@ export function formatAppSettingsError(error: unknown) {
   const combined = [message, details, hint].filter(Boolean).join(" ");
 
   if (code === "42P01" || combined.includes("app_settings") || combined.includes("relation")) {
-    return "Supabase 的 app_settings table 不存在或未暴露。請先套用 supabase/migrations/001_ai_girl_generator.sql。";
+    return "Supabase 的 app_settings table 不存在或未套用 migration。請先套用 supabase/migrations/001_ai_girl_generator.sql。";
   }
 
   if (
@@ -30,7 +30,7 @@ export function formatAppSettingsError(error: unknown) {
     combined.includes("project is paused") ||
     combined.includes("paused")
   ) {
-    return "Supabase project 目前連接不到，常見原因是 project paused。請先到 Supabase dashboard Restore/Unpause project，再回來測試。";
+    return "Supabase project 目前連接不到，常見原因是 project paused、project ref 指錯，或 service role key 不正確。請先到 Supabase dashboard Restore/Unpause project，或在 Vercel 改正 Supabase env。";
   }
 
   if (!combined) {
@@ -42,11 +42,7 @@ export function formatAppSettingsError(error: unknown) {
 
 export async function getAppSetting(key: string) {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("app_settings")
-    .select("value")
-    .eq("key", key)
-    .maybeSingle();
+  const { data, error } = await supabase.from("app_settings").select("value").eq("key", key).maybeSingle();
 
   if (error) throw new Error(formatAppSettingsError(error));
   return typeof data?.value === "string" ? data.value : null;

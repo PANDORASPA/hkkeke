@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  OPENAI_KEY_NAME,
-  formatAppSettingsError,
-  getOpenAIKeyWithSource,
-  setAppSetting
-} from "@/lib/app-settings";
+import { OPENAI_KEY_NAME, formatAppSettingsError, getOpenAIKeyWithSource, setAppSetting } from "@/lib/app-settings";
 import { setOpenAIKeyCookie } from "@/lib/openai-key-cookie";
 import { maskOpenAIKey, testOpenAIKey } from "@/lib/openai";
 
@@ -77,8 +72,8 @@ function buildSaveMessage(testOk: boolean, supabaseStored: boolean, supabaseMess
 
   lines.push(
     supabaseStored
-      ? "已同步保存到 Supabase app_settings，亦已保存到本機瀏覽器 httpOnly cookie。"
-      : "Supabase 暫時不可用，已先保存到本機瀏覽器 httpOnly cookie；Supabase 恢復後可再按一次保存同步。"
+      ? "已同步保存到 Supabase app_settings，亦已保存到本機瀏覽器 httpOnly cookie。全自動任務可讀取 Supabase key。"
+      : "Supabase 暫時不可用，已先保存到本機瀏覽器 httpOnly cookie；手動生成可用，但全自動任務仍需要 Supabase 恢復或 Vercel OPENAI_API_KEY。"
   );
 
   if (supabaseMessage) lines.push(supabaseMessage);

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
-import { formatAppSettingsError, getAppSetting, getOpenAIKeyWithSource } from "@/lib/app-settings";
+import { formatAppSettingsError, getAppSetting, getOpenAIKeyWithSource, OpenAIKeySource } from "@/lib/app-settings";
 import { DRIVE_FOLDERS, driveFetch } from "@/lib/google-drive";
 import { OPENAI_IMAGE_MODEL, testOpenAIKey } from "@/lib/openai";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -21,6 +21,11 @@ const ENV_GROUPS = {
     "GOOGLE_DRIVE_POSES_FOLDER_ID",
     "GOOGLE_DRIVE_GENERATED_FOLDER_ID"
   ]
+};
+
+type AutomationStatus = ReturnType<typeof buildAutomationStatus> & {
+  ready: boolean;
+  blockers: string[];
 };
 
 function missingEnv(keys: string[]) {
@@ -44,12 +49,15 @@ export async function GET() {
   const missingSupabase = missingEnv(ENV_GROUPS.supabase);
   const missingGoogle = missingEnv(ENV_GROUPS.googleDrive);
   const missingFolders = missingEnv(ENV_GROUPS.driveFolders);
+  const automation = buildAutomationStatus() as AutomationStatus;
+  automation.ready = false;
+  automation.blockers = [];
 
   const result = {
     supabase: { ok: false, message: "" },
     googleDrive: { ok: false, message: "" },
     openai: { ok: false, message: "" },
-    automation: buildAutomationStatus(),
+    automation,
     folders: folderStatus(),
     env: {
       supabase: missingSupabase.length ? `Missing: ${missingSupabase.join(", ")}` : "set",
@@ -101,18 +109,32 @@ export async function GET() {
     result.googleDrive = { ok: false, message: error instanceof Error ? error.message : "Google Drive 連接失敗。" };
   }
 
+  let openaiSource: OpenAIKeySource = "missing";
   try {
     const { key, source } = await getOpenAIKeyWithSource();
+    openaiSource = source;
     result.env.openai = key ? "set" : "Missing: OPENAI_API_KEY";
     result.env.openaiSource = source;
     if (!key) {
-      throw new Error("未設定 OpenAI API key。可在設定頁輸入，或在 Vercel 設定 OPENAI_API_KEY。");
+      throw new Error("未設定 OpenAI API key。手動生成可在設定頁輸入；全自動生產需要 Vercel OPENAI_API_KEY，或 Supabase app_settings 可正常讀寫。");
     }
     const test = await testOpenAIKey(key);
     result.openai = { ok: test.ok, message: test.message };
   } catch (error) {
     result.openai = { ok: false, message: error instanceof Error ? error.message : "OpenAI 連接失敗。" };
   }
+
+  result.automation.blockers = getAutomationBlockers({
+    automationConfigured: result.automation.ok,
+    supabaseOk: result.supabase.ok,
+    googleDriveOk: result.googleDrive.ok,
+    openaiOk: result.openai.ok,
+    openaiSource
+  });
+  result.automation.ready = result.automation.blockers.length === 0;
+  result.automation.message = result.automation.ready
+    ? "自動生產已準備好：GitHub/Vercel 觸發、OpenAI、Google Drive、Supabase 都可用。"
+    : `${result.automation.message} 目前仍有 ${result.automation.blockers.length} 個阻塞點，未算真正全自動 ready。`;
 
   return NextResponse.json(result);
 }
@@ -146,4 +168,25 @@ function buildAutomationStatus() {
     route: "/api/auto-production",
     lastRun: null as unknown
   };
+}
+
+function getAutomationBlockers(input: {
+  automationConfigured: boolean;
+  supabaseOk: boolean;
+  googleDriveOk: boolean;
+  openaiOk: boolean;
+  openaiSource: OpenAIKeySource;
+}) {
+  const blockers: string[] = [];
+  if (!input.automationConfigured) blockers.push("自動觸發未完整設定：需要 GitHub OIDC workflow 或 CRON_SECRET。");
+  if (!input.googleDriveOk) blockers.push("Google Drive 未可用：不能讀素材或上傳成品。");
+  if (!input.supabaseOk) blockers.push("Supabase 未可用：不能記錄 generated_images、同步素材、保存 server-side OpenAI key。");
+  if (!input.openaiOk) blockers.push("OpenAI 未可用：不能生成圖片。");
+  if (input.openaiSource === "cookie") {
+    blockers.push("OpenAI key 只存在瀏覽器 cookie；手動生成可用，但 GitHub/Vercel 全自動任務讀不到。請把 key 存到 Supabase app_settings 或設定 Vercel OPENAI_API_KEY。");
+  }
+  if (input.openaiSource === "missing") {
+    blockers.push("未設定 server-side OpenAI key。全自動任務需要 Vercel OPENAI_API_KEY，或 Supabase app_settings 可讀到 OPENAI_API_KEY。");
+  }
+  return blockers;
 }

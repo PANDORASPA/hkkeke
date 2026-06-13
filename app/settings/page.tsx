@@ -9,13 +9,18 @@ type HealthItem = {
 
 type AutomationStatus = {
   ok: boolean;
+  ready: boolean;
   message: string;
+  blockers: string[];
   cronSecret: string;
   vercelDailyCron: string;
   githubHourlyWorkflow: string;
   githubOidc: string;
   targetPerRun: string;
   estimatedDailyImages: string;
+  sceneReplenish: string;
+  sceneReserveTarget: string;
+  sceneVariationsPerRun: string;
   route: string;
   lastRun?: Record<string, unknown> | null;
 };
@@ -71,7 +76,7 @@ export default function SettingsPage() {
       if (!response.ok) throw new Error(json.error || "儲存失敗。");
       setApiKey("");
       setKeyStatus({ configured: true, masked: json.masked, source: json.source || "cookie" });
-      setMessage(json.test?.message || json.message || "OpenAI API key 已儲存。");
+      setMessage(json.message || json.test?.message || "OpenAI API key 已儲存。");
       await testConnections();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "儲存失敗。");
@@ -98,7 +103,7 @@ export default function SettingsPage() {
         <div>
           <h1>設定</h1>
           <p className="muted">
-            Supabase、Google Drive、自動生產使用 Vercel server-side env；OpenAI API key 可以在這裡輸入。
+            這裡用來檢查 Supabase、Google Drive、OpenAI，以及全自動生產是否真正 ready。
           </p>
         </div>
         <button className="primary" onClick={testConnections} disabled={loading}>
@@ -110,7 +115,8 @@ export default function SettingsPage() {
         <div className="panel">
           <h2>OpenAI API Key</h2>
           <p className="muted">
-            這裡只保存 key，不會顯示完整內容。測試會檢查 <code>gpt-image-1.5</code> 圖片模型是否可用。
+            在這裡輸入 key 後，手動生成會即時可用。要 GitHub/Vercel 全自動生產，key 必須同步到 Supabase
+            app_settings，或設定成 Vercel server-side <code>OPENAI_API_KEY</code>。
           </p>
           <p className={`status ${keyStatus?.configured ? "ok" : "error"}`}>
             <strong>狀態</strong><br />
@@ -154,10 +160,17 @@ export default function SettingsPage() {
           <h2>自動生產</h2>
           {health ? (
             <div>
-              <p className={`status ${health.automation.ok ? "ok" : "error"}`}>
-                <strong>{health.automation.ok ? "已準備" : "需要設定"}</strong><br />
+              <p className={`status ${health.automation.ready ? "ok" : "error"}`}>
+                <strong>{health.automation.ready ? "全自動已準備" : "全自動未完成"}</strong><br />
                 {health.automation.message}
               </p>
+              {health.automation.blockers?.length ? (
+                <div className="readiness-list warning">
+                  {health.automation.blockers.map((blocker) => (
+                    <span key={blocker}>{blocker}</span>
+                  ))}
+                </div>
+              ) : null}
               <StatusList
                 items={{
                   route: health.automation.route,
@@ -166,12 +179,14 @@ export default function SettingsPage() {
                   githubHourlyWorkflow: health.automation.githubHourlyWorkflow,
                   githubOidc: health.automation.githubOidc,
                   targetPerRun: health.automation.targetPerRun,
-                  estimatedDailyImages: health.automation.estimatedDailyImages
+                  estimatedDailyImages: health.automation.estimatedDailyImages,
+                  sceneReplenish: health.automation.sceneReplenish,
+                  sceneReserveTarget: health.automation.sceneReserveTarget,
+                  sceneVariationsPerRun: health.automation.sceneVariationsPerRun
                 }}
               />
               <p className="muted">
-                Vercel Hobby 只支援每日 Cron；每小時生產由 GitHub Actions 執行。GitHub Actions 會用 OIDC
-                短期身份 token 觸發自動生產，不需要額外設定 repository secret。
+                Vercel 每日 cron 可作後備；真正每小時生產由 GitHub Actions OIDC 觸發。自動場景補貨會在生產前補充場景庫，減少同背景重複。
               </p>
               <h3>最後一次自動生產</h3>
               {health.automation.lastRun ? (
@@ -191,9 +206,9 @@ export default function SettingsPage() {
             <li>把場景圖片放到 <code>01_Scenes_場景</code> 或其子資料夾。</li>
             <li>把女仔參考、衣服、髮型、姿勢圖片放到對應資料夾。</li>
             <li>到「生成圖片」頁按「同步 Google Drive 素材」。</li>
-            <li>至少選一張場景圖；其他參考圖可選可不選。</li>
-            <li>設定風格、髮型、衣服、表情、身材、姿勢，再生成或加入列隊。</li>
-            <li>如果 Drive 上傳失敗，可在生成結果按「補傳 Drive」。</li>
+            <li>場景庫少時，先按「自動補 3 張場景庫」建立背景儲備。</li>
+            <li>用「批量生產工廠」建立 24、100 或 200 張列隊。</li>
+            <li>要無人手長跑，必須確保本頁顯示「全自動已準備」。</li>
           </ol>
         </div>
 
@@ -221,7 +236,7 @@ function StatusList(props: { items: Record<string, string> }) {
       {Object.entries(props.items).map(([key, value]) => (
         <div key={key}>
           <code>{key}</code>
-          <span className={value === "set" ? "ok-text" : value === "missing" || value.startsWith("Missing") ? "error-text" : ""}>
+          <span className={value === "set" || value === "true" ? "ok-text" : value === "missing" || value.startsWith("Missing") ? "error-text" : ""}>
             {value}
           </span>
         </div>
@@ -243,5 +258,6 @@ function sourceLabel(source: string) {
   if (source === "cookie") return "本機 cookie";
   if (source === "supabase") return "Supabase";
   if (source === "env") return "Vercel env";
+  if (source === "supabase+cookie") return "Supabase + 本機 cookie";
   return source;
 }
