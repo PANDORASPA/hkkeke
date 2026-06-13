@@ -1,4 +1,5 @@
 import { formatAppSettingsError, getOpenAIKey } from "./app-settings";
+import { appendGeneratedDriveLog } from "./generated-drive-log";
 import { downloadDriveFile, makeGeneratedFileName, uploadGeneratedImage } from "./google-drive";
 import { imageDataUrlToBuffer } from "./image-data";
 import { OPENAI_IMAGE_MODEL, OPENAI_IMAGE_QUALITY, OPENAI_IMAGE_SIZE, parseOpenAIError } from "./openai";
@@ -91,10 +92,12 @@ export async function generateImagesFromPayload(payload: GeneratePayload) {
       file_name: fileName,
       upload_warning: uploadWarning || null,
       ...baseRecord,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      source: uploaded ? "drive" : "local"
     };
 
     if (uploaded) {
+      await appendGeneratedLogSafely(record, warnings);
       try {
         const { data, error } = await supabase
           .from("generated_images")
@@ -107,7 +110,7 @@ export async function generateImagesFromPayload(payload: GeneratePayload) {
           .select("*")
           .single();
         if (!error && data) {
-          images.push({ ...data, file_name: fileName, upload_warning: null } as GeneratedImage);
+          images.push({ ...data, file_name: fileName, upload_warning: null, source: "supabase" } as GeneratedImage);
           continue;
         }
         if (error) warnings.add(formatAppSettingsError(error));
@@ -228,6 +231,14 @@ async function generateImageWithOpenAI(prompt: string, references: DriveAsset[],
   }
 
   throw new Error("OpenAI 回應沒有包含 b64_json 或圖片 URL。");
+}
+
+async function appendGeneratedLogSafely(image: GeneratedImage, warnings: Set<string>) {
+  try {
+    await appendGeneratedDriveLog([image]);
+  } catch (error) {
+    warnings.add(error instanceof Error ? `Drive 成品 manifest 記錄失敗：${error.message}` : "Drive 成品 manifest 記錄失敗。");
+  }
 }
 
 function explainDriveUploadError(error: unknown) {

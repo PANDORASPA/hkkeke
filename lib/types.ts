@@ -41,7 +41,7 @@ export type GeneratedImage = {
   batch_id?: string | null;
   local_status?: "new" | "selected" | "rejected";
   review_tags?: string[];
-  source?: "supabase" | "local";
+  source?: "supabase" | "drive" | "local";
 };
 
 export type GeneratePayload = {
