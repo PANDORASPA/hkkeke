@@ -8,10 +8,12 @@ import {
   OUTFITS,
   POSES
 } from "@/lib/options";
-import { listDriveAssets } from "@/lib/google-drive";
-import { verifyGitHubOidcToken } from "@/lib/github-oidc";
-import { generateImagesFromPayload } from "@/lib/server-generation";
 import { setAppSetting } from "@/lib/app-settings";
+import { listDriveAssets, uploadAssetImage } from "@/lib/google-drive";
+import { verifyGitHubOidcToken } from "@/lib/github-oidc";
+import { generateSceneVariation, makeSceneVariationFileName } from "@/lib/scene-generation";
+import { generateImagesFromPayload } from "@/lib/server-generation";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { AssetCategory, DriveAsset, GeneratePayload } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -33,8 +35,10 @@ async function runAutomatedProduction(request: NextRequest) {
   let authMode = "";
   let targetImages = 0;
   let seed = "";
+
   try {
     authMode = await authorizeCronRequest(request);
+
     const url = new URL(request.url);
     const requestedTarget = Number(url.searchParams.get("target") || process.env.DAILY_AUTO_IMAGES_PER_RUN || "5");
     targetImages = clamp(requestedTarget, 1, 12);
@@ -54,13 +58,29 @@ async function runAutomatedProduction(request: NextRequest) {
 
     const assets = groupAssets(await listDriveAssets());
     if (!assets.scene.length) {
-      return NextResponse.json({ ok: false, error: "自動生產需要至少一張 Drive 場景素材。" }, { status: 400 });
+      const error = "自動生產需要至少一張 Google Drive 場景素材。";
+      await recordProductionRun({
+        id: runId,
+        status: "failed",
+        authMode,
+        seed,
+        targetImages,
+        finishedAt: new Date().toISOString(),
+        error
+      });
+      return NextResponse.json({ ok: false, error }, { status: 400 });
     }
+
+    const warnings = new Set<string>();
+    const sceneReplenish = await replenishSceneReserve(assets.scene);
+    if (sceneReplenish.assets.length) {
+      assets.scene = [...sceneReplenish.assets, ...assets.scene];
+    }
+    for (const warning of sceneReplenish.warnings) warnings.add(warning);
 
     const jobs = buildProductionPayloads({ assets, targetImages, seed, includeReferences, maxJobs });
     const batches = [];
     let generatedCount = 0;
-    const warnings = new Set<string>();
 
     for (const job of jobs) {
       const result = await generateImagesFromPayload(job.payload);
@@ -83,6 +103,7 @@ async function runAutomatedProduction(request: NextRequest) {
       targetImages,
       generatedCount,
       jobs: batches.length,
+      sceneReplenish,
       warnings: Array.from(warnings),
       finishedAt: new Date().toISOString()
     });
@@ -95,10 +116,12 @@ async function runAutomatedProduction(request: NextRequest) {
       targetImages,
       generatedCount,
       jobs: batches.length,
+      sceneReplenish,
       batches,
       warnings: Array.from(warnings)
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "自動生產失敗。";
     if (runId) {
       await recordProductionRun({
         id: runId,
@@ -107,14 +130,72 @@ async function runAutomatedProduction(request: NextRequest) {
         seed,
         targetImages,
         finishedAt: new Date().toISOString(),
-        error: error instanceof Error ? error.message : "自動生產失敗。"
+        error: message
       });
     }
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "自動生產失敗。" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
+}
+
+async function replenishSceneReserve(existingScenes: DriveAsset[]) {
+  const enabled = (process.env.AUTO_SCENE_REPLENISH || "true") !== "false";
+  const targetReserve = clamp(Number(process.env.AUTO_SCENE_RESERVE_TARGET || "24"), 1, 500);
+  const variationsPerRun = clamp(Number(process.env.AUTO_SCENE_VARIATIONS_PER_RUN || "2"), 0, 12);
+  const needed = Math.max(0, targetReserve - existingScenes.length);
+  const createCount = enabled ? Math.min(needed, variationsPerRun) : 0;
+  const assets: DriveAsset[] = [];
+  const warnings: string[] = [];
+
+  if (!createCount) {
+    return {
+      enabled,
+      targetReserve,
+      beforeCount: existingScenes.length,
+      createdCount: 0,
+      afterEstimate: existingScenes.length,
+      assets,
+      warnings
+    };
+  }
+
+  for (let index = 0; index < createCount; index += 1) {
+    try {
+      const source = existingScenes[index % existingScenes.length];
+      const result = await generateSceneVariation({
+        sceneAssetId: source.google_drive_file_id,
+        sceneName: source.sub_category || source.file_name || "Scene",
+        extraPrompt: [
+          "Automatic scene reserve expansion before daily image production.",
+          "Create a fresh realistic empty background, same location category, different exact camera angle and environmental details."
+        ].join("\n")
+      });
+      const asset = await uploadAssetImage(result.buffer, makeSceneVariationFileName(source), "scene", "image/png");
+      assets.push(asset);
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : "場景自動補貨失敗。");
+      break;
+    }
+  }
+
+  if (assets.length) {
+    try {
+      const supabase = getSupabaseAdmin();
+      const { error } = await supabase.from("drive_assets").upsert(assets, { onConflict: "google_drive_file_id" });
+      if (error) throw error;
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : "場景素材已上傳 Drive，但同步 Supabase 失敗。");
+    }
+  }
+
+  return {
+    enabled,
+    targetReserve,
+    beforeCount: existingScenes.length,
+    createdCount: assets.length,
+    afterEstimate: existingScenes.length + assets.length,
+    assets,
+    warnings
+  };
 }
 
 async function recordProductionRun(value: Record<string, unknown>) {

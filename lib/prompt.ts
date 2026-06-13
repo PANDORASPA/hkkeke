@@ -6,12 +6,9 @@ export type PromptReferences = {
   extras?: DriveAsset[];
 };
 
-// 參考圖會在 OpenAI Images Edits route 以 image[] 傳入。
-// 這裡同時把檔名和分類寫入 prompt，令模型更清楚每張參考圖用途。
-export function buildPrompt(
-  payload: GeneratePayload,
-  references?: PromptReferences
-) {
+// Reference images are sent to the OpenAI Images edit route as image[].
+// The prompt also names each reference so the model can keep their purpose clear.
+export function buildPrompt(payload: GeneratePayload, references?: PromptReferences) {
   const lines: string[] = [];
 
   if (references?.scene) {
@@ -23,9 +20,8 @@ export function buildPrompt(
 
   lines.push("Create one young adult East Asian woman in the scene.");
   lines.push("Do not imitate a real private person; create a new fictional adult character.");
-  lines.push(
-    "She should have a different face, different hairstyle, different hair color, different outfit and different expression."
-  );
+  lines.push("She should have a different face, different hairstyle, different hair color, different outfit and different expression.");
+  lines.push("Keep the image tasteful adult fashion photography, non-explicit, and platform-safe.");
   lines.push(`Style: ${payload.girlStyle} Hong Kong girl.`);
   lines.push(`Hair: ${payload.hairColor} ${payload.hairStyle}.`);
   lines.push(`Outfit: ${payload.outfit}.`);

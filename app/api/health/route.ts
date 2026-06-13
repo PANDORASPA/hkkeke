@@ -28,9 +28,7 @@ function missingEnv(keys: string[]) {
 }
 
 function folderStatus() {
-  return Object.fromEntries(
-    Object.entries(DRIVE_FOLDERS).map(([key, value]) => [key, value ? "set" : "missing"])
-  );
+  return Object.fromEntries(Object.entries(DRIVE_FOLDERS).map(([key, value]) => [key, value ? "set" : "missing"]));
 }
 
 async function checkDriveRootFolder() {
@@ -64,7 +62,10 @@ export async function GET() {
       githubOidcAudience: process.env.GITHUB_OIDC_AUDIENCE || "hkkeke-auto-production",
       githubOidcRepository: process.env.GITHUB_OIDC_REPOSITORY || "PANDORASPA/hkkeke",
       dailyAutoImagesPerRun: process.env.DAILY_AUTO_IMAGES_PER_RUN || "5",
-      dailyAutoUseReferences: process.env.DAILY_AUTO_USE_REFERENCES || "true"
+      dailyAutoUseReferences: process.env.DAILY_AUTO_USE_REFERENCES || "true",
+      autoSceneReplenish: process.env.AUTO_SCENE_REPLENISH || "true",
+      autoSceneReserveTarget: process.env.AUTO_SCENE_RESERVE_TARGET || "24",
+      autoSceneVariationsPerRun: process.env.AUTO_SCENE_VARIATIONS_PER_RUN || "2"
     }
   };
 
@@ -129,7 +130,7 @@ function buildAutomationStatus() {
   return {
     ok: (cronSecretSet || oidcWorkflow) && workflowExists && hourlyWorkflow,
     message: oidcWorkflow
-      ? "GitHub Actions OIDC 小時級自動生產已啟用，不需要 GitHub repository secret。"
+      ? "GitHub Actions OIDC 每小時自動生產已啟用，不需要 GitHub repository secret。"
       : cronSecretSet
         ? "Vercel 端自動生產 route 已受 CRON_SECRET 保護。"
         : "未設定 CRON_SECRET，亦未啟用 GitHub OIDC，自動生產不會執行。",
@@ -139,6 +140,9 @@ function buildAutomationStatus() {
     githubOidc: oidcWorkflow ? "set" : "missing",
     targetPerRun: String(safeTarget),
     estimatedDailyImages: workflowExists && hourlyWorkflow ? String(safeTarget * 24) : String(safeTarget),
+    sceneReplenish: process.env.AUTO_SCENE_REPLENISH || "true",
+    sceneReserveTarget: process.env.AUTO_SCENE_RESERVE_TARGET || "24",
+    sceneVariationsPerRun: process.env.AUTO_SCENE_VARIATIONS_PER_RUN || "2",
     route: "/api/auto-production",
     lastRun: null as unknown
   };

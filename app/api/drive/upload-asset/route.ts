@@ -37,10 +37,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ asset });
   } catch (error) {
-    return NextResponse.json(
-      { error: explainDriveUploadError(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: explainDriveUploadError(error) }, { status: 500 });
   }
 }
 
@@ -52,7 +49,7 @@ function sanitizeFileName(value: string) {
 function explainDriveUploadError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("storageQuotaExceeded") || message.includes("Service Accounts do not have storage quota")) {
-    return "Google Drive 上傳失敗：Service Account 沒有個人儲存 quota。請把目標資料夾放在 Shared Drive，或改用有授權的 Google OAuth。";
+    return "Google Drive 上傳失敗：Service Account 沒有個人儲存空間 quota。請把目標資料夾放在 Shared Drive，或改用有授權的 Google OAuth。";
   }
   return `Google Drive 上傳失敗：${message}`;
 }

@@ -188,6 +188,7 @@ export default function GeneratePage() {
   const [factoryRecipes, setFactoryRecipes] = useState<FactoryRecipe[]>([]);
   const [generating, setGenerating] = useState(false);
   const [generatingScene, setGeneratingScene] = useState(false);
+  const [replenishingScenes, setReplenishingScenes] = useState(false);
   const [savingSceneVariation, setSavingSceneVariation] = useState(false);
   const [uploadingResultIds, setUploadingResultIds] = useState<string[]>([]);
   const [sceneVariation, setSceneVariation] = useState<SceneVariation | null>(null);
@@ -965,6 +966,39 @@ export default function GeneratePage() {
     }
   }
 
+  async function replenishSceneReserve() {
+    if (!assets.scene.length) {
+      setStatus("請先同步或上傳至少一張場景圖，先有種子場景先可以自動補貨。");
+      return;
+    }
+    setReplenishingScenes(true);
+    setStatus("正在自動補充場景庫：會用現有場景生成真實相似場景，並保存到 Google Drive...");
+    try {
+      const response = await fetch("/api/scene-replenish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetReserve: Math.max(24, assets.scene.length + 3),
+          variations: 3,
+          seedSceneId: selectedScene || assets.scene[0]?.google_drive_file_id,
+          extraPrompt: form.extraPrompt
+        })
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "自動補充場景庫失敗。");
+      const newAssets = (json.assets || []) as DriveAsset[];
+      if (newAssets.length) {
+        setAssets((current) => ({ ...current, scene: [...newAssets, ...current.scene] }));
+        setSelectedScene(newAssets[0].id || newAssets[0].google_drive_file_id);
+      }
+      setStatus(`已補充 ${json.createdCount || newAssets.length} 張場景到 Google Drive。場景庫約 ${json.afterEstimate || assets.scene.length + newAssets.length} 張。`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "自動補充場景庫失敗。");
+    } finally {
+      setReplenishingScenes(false);
+    }
+  }
+
   async function uploadResultToDrive(image: GeneratedImage) {
     if (!image.data_url) {
       setStatus("這張圖片沒有本機 data URL，不能補傳。");
@@ -1129,7 +1163,10 @@ export default function GeneratePage() {
             <button onClick={generateSimilarScene} disabled={generatingScene || !selectedScene}>
               {generatingScene ? "生成相似場景中..." : "按目前場景生成相似場景"}
             </button>
-            <p className="muted">生成後可保存到 Drive 場景庫，之後批量生產會自動輪流使用。</p>
+            <button type="button" onClick={replenishSceneReserve} disabled={replenishingScenes || !assets.scene.length}>
+              {replenishingScenes ? "補充場景庫中..." : "自動補 3 張場景庫"}
+            </button>
+            <p className="muted">生成後可保存到 Drive 場景庫；自動補貨會一次派生多張真實相似場景，之後批量生產會自動輪流使用。</p>
             {sceneVariation ? (
               <article className="asset-card selected">
                 <img src={sceneVariation.data_url} alt="相似場景" />

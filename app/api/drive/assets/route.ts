@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { listDriveAssets } from "@/lib/google-drive";
 import { formatAppSettingsError } from "@/lib/app-settings";
+import { listDriveAssets } from "@/lib/google-drive";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -24,9 +24,7 @@ export async function GET() {
     if (assets.length) {
       try {
         const supabase = getSupabaseAdmin();
-        const { error } = await supabase
-          .from("drive_assets")
-          .upsert(assets, { onConflict: "google_drive_file_id" });
+        const { error } = await supabase.from("drive_assets").upsert(assets, { onConflict: "google_drive_file_id" });
         if (error) throw error;
       } catch (error) {
         sync = {

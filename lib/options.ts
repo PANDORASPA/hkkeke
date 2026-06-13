@@ -10,7 +10,11 @@ export const GIRL_STYLES = [
   "street fashion",
   "soft elegant",
   "hair salon model",
-  "travel lifestyle"
+  "travel lifestyle",
+  "airport casual",
+  "night city girl",
+  "coffee shop lifestyle",
+  "clean office lady"
 ];
 
 export const HAIR_STYLES = [
@@ -25,7 +29,11 @@ export const HAIR_STYLES = [
   "half-up hairstyle",
   "air bangs",
   "side parted long hair",
-  "wet look hair"
+  "wet look hair",
+  "face framing layers",
+  "curtain bangs",
+  "sleek straight hair",
+  "soft perm waves"
 ];
 
 export const HAIR_COLORS = [
@@ -40,7 +48,11 @@ export const HAIR_COLORS = [
   "red brown",
   "honey blonde",
   "dark blonde",
-  "olive brown"
+  "olive brown",
+  "warm beige brown",
+  "cool espresso brown",
+  "copper brown",
+  "smoky grey brown"
 ];
 
 export const OUTFITS = [
@@ -59,7 +71,13 @@ export const OUTFITS = [
   "hotel lounge outfit",
   "shopping mall outfit",
   "light jacket street outfit",
-  "swimwear with cover-up"
+  "swimwear with cover-up",
+  "cropped cardigan and wide-leg pants",
+  "linen shirt and pleated skirt",
+  "black fitted top and long skirt",
+  "smart casual blazer outfit",
+  "tracksuit street outfit",
+  "simple t-shirt and jeans"
 ];
 
 export const BODY_TYPES = [
@@ -70,7 +88,9 @@ export const BODY_TYPES = [
   "petite",
   "tall slim",
   "balanced natural proportion",
-  "fit and toned"
+  "fit and toned",
+  "medium natural build",
+  "long leg proportion"
 ];
 
 export const EXPRESSIONS = [
@@ -85,7 +105,11 @@ export const EXPRESSIONS = [
   "relaxed neutral expression",
   "laughing naturally",
   "focused lifestyle look",
-  "shy subtle smile"
+  "shy subtle smile",
+  "small polite smile",
+  "thoughtful gaze",
+  "bright cheerful smile",
+  "camera-aware candid look"
 ];
 
 export const POSES = [
@@ -100,7 +124,11 @@ export const POSES = [
   "crossing street",
   "waiting naturally",
   "turning body slightly",
-  "looking away candidly"
+  "looking away candidly",
+  "one hand in pocket",
+  "checking phone",
+  "walking past camera",
+  "standing near railing"
 ];
 
 export const QUALITY_PROMPT =
@@ -122,6 +150,10 @@ export const OPTION_LABELS: Record<string, string> = {
   "soft elegant": "溫柔優雅",
   "hair salon model": "髮型屋模特",
   "travel lifestyle": "旅行生活感",
+  "airport casual": "機場休閒",
+  "night city girl": "夜景城市感",
+  "coffee shop lifestyle": "咖啡店生活感",
+  "clean office lady": "乾淨 Office Lady",
   "long straight hair": "長直髮",
   "soft wavy hair": "柔和微曲髮",
   "loose big waves": "鬆散大波浪",
@@ -134,6 +166,10 @@ export const OPTION_LABELS: Record<string, string> = {
   "air bangs": "空氣瀏海",
   "side parted long hair": "側分長髮",
   "wet look hair": "濕髮造型",
+  "face framing layers": "修面層次",
+  "curtain bangs": "八字瀏海",
+  "sleek straight hair": "順滑直髮",
+  "soft perm waves": "柔和電髮",
   "natural black": "自然黑",
   "soft black": "柔黑",
   "dark brown": "深啡",
@@ -146,6 +182,10 @@ export const OPTION_LABELS: Record<string, string> = {
   "honey blonde": "蜂蜜金",
   "dark blonde": "深金啡",
   "olive brown": "橄欖啡",
+  "warm beige brown": "暖米啡",
+  "cool espresso brown": "冷調深啡",
+  "copper brown": "銅啡",
+  "smoky grey brown": "煙灰啡",
   "summer outfit": "夏日穿搭",
   "tank top and denim shorts": "背心配牛仔短褲",
   "casual dress": "休閒連身裙",
@@ -153,7 +193,7 @@ export const OPTION_LABELS: Record<string, string> = {
   "office outfit": "Office 穿搭",
   "night out outfit": "夜晚外出穿搭",
   "white blouse and midi skirt": "白恤衫配中裙",
-  "oversized shirt and shorts": "寬鬆恤衫配短褲",
+  "oversized shirt and shorts": "寬身恤衫配短褲",
   "knit top and jeans": "針織上衣配牛仔褲",
   "minimal salon uniform": "簡約髮型屋制服",
   "airport casual outfit": "機場休閒穿搭",
@@ -162,6 +202,12 @@ export const OPTION_LABELS: Record<string, string> = {
   "shopping mall outfit": "商場穿搭",
   "light jacket street outfit": "薄外套街拍穿搭",
   "swimwear with cover-up": "泳衣配罩衫",
+  "cropped cardigan and wide-leg pants": "短外套配闊腳褲",
+  "linen shirt and pleated skirt": "麻質恤衫配百褶裙",
+  "black fitted top and long skirt": "黑色貼身上衣配長裙",
+  "smart casual blazer outfit": "Smart Casual 西裝外套",
+  "tracksuit street outfit": "運動套裝街拍",
+  "simple t-shirt and jeans": "簡單 T-shirt 配牛仔褲",
   slim: "纖瘦",
   "soft curvy": "柔和曲線感",
   hourglass: "沙漏比例",
@@ -169,6 +215,8 @@ export const OPTION_LABELS: Record<string, string> = {
   "tall slim": "高挑纖瘦",
   "balanced natural proportion": "自然均衡比例",
   "fit and toned": "健康緊緻",
+  "medium natural build": "中等自然身形",
+  "long leg proportion": "長腿比例",
   "natural smile": "自然微笑",
   "cool expression": "冷感表情",
   "cute expression": "可愛表情",
@@ -181,6 +229,10 @@ export const OPTION_LABELS: Record<string, string> = {
   "laughing naturally": "自然笑出來",
   "focused lifestyle look": "生活感專注",
   "shy subtle smile": "害羞淺笑",
+  "small polite smile": "禮貌微笑",
+  "thoughtful gaze": "若有所思",
+  "bright cheerful smile": "開朗笑容",
+  "camera-aware candid look": "望鏡但自然",
   standing: "站立",
   sitting: "坐姿",
   walking: "行走",
@@ -190,7 +242,11 @@ export const OPTION_LABELS: Record<string, string> = {
   "adjusting hair": "整理頭髮",
   "holding handbag": "拎手袋",
   "crossing street": "過馬路",
-  "waiting naturally": "自然等候",
+  "waiting naturally": "自然等待",
   "turning body slightly": "身體微轉",
-  "looking away candidly": "望向旁邊抓拍"
+  "looking away candidly": "望向旁邊抓拍",
+  "one hand in pocket": "單手插袋",
+  "checking phone": "低頭睇手機",
+  "walking past camera": "由鏡頭旁行過",
+  "standing near railing": "企喺欄杆旁"
 };
